@@ -1,4 +1,3 @@
-# bot/main.py
 import os
 import hmac
 import hashlib
@@ -14,22 +13,18 @@ from sqlalchemy import text
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, ContextTypes
 
-# =========================
-# ENV – senin deðerlerine göre
-# =========================
-TELEGRAM_BOT_TOKEN = os.environ["TELEGRAM_BOT_TOKEN"]  # 8383... (DO'da Secret)
-DATABASE_URL       = os.environ.get("DATABASE_URL")    # psycopg URI (tek satýr)
-SECRET             = os.environ.get("SECRET", "")      # 288e7f80d1204fea9bdc2749450bc4bc
-PUBLIC_GAME_URL    = os.environ.get("PUBLIC_GAME_URL", "https://okapi-miniapp-7ex5j.ondigitalocean.app/")
+# ============== ENV ==============
+TELEGRAM_BOT_TOKEN = os.environ["TELEGRAM_BOT_TOKEN"]
+DATABASE_URL       = os.environ.get("DATABASE_URL")
+SECRET             = os.environ.get("SECRET", "")
+PUBLIC_GAME_URL    = os.environ.get("PUBLIC_GAME_URL", "/")
 GAME_SHORT_NAME    = os.environ.get("GAME_SHORT_NAME", "kapi_run")
-WEBHOOK_PATH       = os.environ.get("WEBHOOK_PATH", "/tg/webhook")  # /tg/webhook
+WEBHOOK_PATH       = os.environ.get("WEBHOOK_PATH", "/tg/webhook")
 
-# =========================
-# FASTAPI APP & STATIC
-# =========================
+# ============== FASTAPI ==========
 app = FastAPI(title="KAPI RUN - Bot & API")
 
-# Statikler (varsa mount et)
+# Mount static dirs if present
 if os.path.isdir("images"):
     app.mount("/images", StaticFiles(directory="images"), name="images")
 if os.path.isdir("scripts"):
@@ -52,15 +47,12 @@ async def serve_index():
     index_path = os.path.join(os.getcwd(), "index.html")
     if os.path.isfile(index_path):
         return FileResponse(index_path, media_type="text/html")
-    return JSONResponse({"ok": True, "hint": "index.html bulunamadý"}, status_code=200)
+    return JSONResponse({"ok": True, "hint": "index.html not found"}, status_code=200)
 
-# =========================
-# DATABASE (async)
-# =========================
+# ============== DATABASE =========
 engine: Optional[AsyncEngine] = None
 
 async def ensure_schema() -> None:
-    """scores tablosunu oluþtur + index."""
     assert engine is not None
     async with engine.begin() as conn:
         await conn.execute(text("""
@@ -75,9 +67,7 @@ async def ensure_schema() -> None:
         CREATE INDEX IF NOT EXISTS idx_scores_best ON scores (best_score DESC);
         """))
 
-# =========================
-# TELEGRAM (PTB v21, async)
-# =========================
+# ============== TELEGRAM =========
 telegram_app: Application = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
 
 def _fmt_user(u: Optional[str], uid: int) -> str:
@@ -87,17 +77,15 @@ def _fmt_user(u: Optional[str], uid: int) -> str:
     return u[1:] if u.startswith("@") else u
 
 async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """ /start › Oyunu Baþlat butonu """
-    kb = [[InlineKeyboardButton("Oyunu Baþlat", url=PUBLIC_GAME_URL)]]
+    kb = [[InlineKeyboardButton("Play the Game", url=PUBLIC_GAME_URL)]]
     await update.message.reply_text(
-        "KAPI RUN’a hoþ geldin! ??\nButona bas ve oyna. Skorlarýn otomatik kaydedilecek.",
+        "Welcome to KAPI RUN!",
         reply_markup=InlineKeyboardMarkup(kb)
     )
 
 async def cmd_top(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """ /top › En iyi 200 skor """
     if engine is None:
-        await update.message.reply_text("Leaderboard þu an kullanýlamýyor (DB yok).")
+        await update.message.reply_text("Leaderboard is not available (DB not configured).")
         return
     async with engine.connect() as conn:
         res = await conn.execute(text("""
@@ -108,40 +96,31 @@ async def cmd_top(update: Update, context: ContextTypes.DEFAULT_TYPE):
         """))
         rows = list(res)
     if not rows:
-        await update.message.reply_text("Henüz skor yok. Ýlk skor senin olsun! ??")
+        await update.message.reply_text("No scores yet.")
         return
     lines = []
     for i, r in enumerate(rows, 1):
         uname = _fmt_user(r._mapping["username"], r._mapping["user_id"])
         score = r._mapping["best_score"]
-        lines.append(f"{i}. @{uname} — {score}")
+        lines.append(f"{i}. @{uname} ? {score}")
         if len("\n".join(lines)) > 3500:
-            lines.append("…")
+            lines.append("...")
             break
-    await update.message.reply_text("?? TOP SKORLAR\n" + "\n".join(lines))
+    await update.message.reply_text("TOP SCORES\n" + "\n".join(lines))
 
 telegram_app.add_handler(CommandHandler("start", cmd_start))
 telegram_app.add_handler(CommandHandler("top",   cmd_top))
 
-# =========================
-# WEBHOOK (Telegram › FastAPI)
-# =========================
+# ============== WEBHOOK ==========
 @app.post(WEBHOOK_PATH)
 async def telegram_webhook(request: Request):
-    """Telegram webhook giriþ noktasý."""
     data = await request.json()
     update = Update.de_json(data, telegram_app.bot)
     await telegram_app.process_update(update)
     return {"ok": True}
 
-# =========================
-# SCORE API
-# =========================
+# ============== SCORE API ========
 def _hmac_ok(user_id: int, score: int, sig: str) -> bool:
-    """
-    Basit HMAC doðrulama:
-      client_signature = HMAC_SHA256( f"{user_id}:{score}".encode(), SECRET.encode() ).hexdigest()
-    """
     if not SECRET:
         return False
     msg = f"{user_id}:{score}".encode("utf-8")
@@ -150,10 +129,6 @@ def _hmac_ok(user_id: int, score: int, sig: str) -> bool:
 
 @app.post("/api/score")
 async def post_score(payload: Dict[str, Any]):
-    """
-    JSON:
-      { "user_id": 123, "username": "akif", "score": 456, "sig": "<hmac-hex>" }
-    """
     for k in ("user_id", "username", "score", "sig"):
         if k not in payload:
             raise HTTPException(status_code=400, detail=f"missing field: {k}")
@@ -183,7 +158,6 @@ async def post_score(payload: Dict[str, Any]):
 
 @app.get("/api/leaderboard")
 async def leaderboard(limit: int = 200):
-    """Top N skor (varsayýlan 200)"""
     if engine is None:
         raise HTTPException(status_code=500, detail="database not configured")
     limit = max(1, min(200, int(limit)))
@@ -197,20 +171,16 @@ async def leaderboard(limit: int = 200):
         rows = [dict(r._mapping) for r in res]
     return rows
 
-# =========================
-# LIFECYCLE – startup/shutdown
-# =========================
+# ============== LIFECYCLE ========
 @app.on_event("startup")
 async def on_startup():
-    # Telegram app init
     await telegram_app.initialize()
-    # DB baðlan
     global engine
     if DATABASE_URL:
         engine = create_async_engine(DATABASE_URL, pool_pre_ping=True)
         await ensure_schema()
     else:
-        print("WARNING: DATABASE_URL not set; leaderboard/score API çalýþmayacak.")
+        print("WARNING: DATABASE_URL not set.")
 
 @app.on_event("shutdown")
 async def on_shutdown():
