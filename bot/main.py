@@ -27,7 +27,7 @@ WEBHOOK_PATH       = os.environ.get("WEBHOOK_PATH", "/tg/webhook")  # /tg/webhoo
 # =========================
 # FASTAPI APP & STATIC
 # =========================
-app = FastAPI(title="KAPI RUN – Bot & API")
+app = FastAPI(title="KAPI RUN - Bot & API")
 
 # Statikler (varsa mount et)
 if os.path.isdir("images"):
