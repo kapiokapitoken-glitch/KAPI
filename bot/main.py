@@ -6,6 +6,10 @@ import hmac
 import hashlib
 from typing import Any, Dict, Optional
 
+import time
+from urllib.parse import urlencode
+
+
 from fastapi import FastAPI, Request, HTTPException, status
 from fastapi.responses import JSONResponse, FileResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
@@ -180,8 +184,15 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = update.message or update.effective_message
     if not msg:
         return
-    kb = [[InlineKeyboardButton("Play the Game", url=PUBLIC_GAME_URL)]]
+
+        # Telegram cache-bust için URL’ye ?v=timestamp parametresi ekle
+    v = str(int(time.time()))
+    sep = "&" if "?" in PUBLIC_GAME_URL else "?"
+    url = f"{PUBLIC_GAME_URL}{sep}v={v}"
+
+    kb = [[InlineKeyboardButton("Play the Game", url=url)]]
     await msg.reply_text("Welcome to KAPI RUN!", reply_markup=InlineKeyboardMarkup(kb))
+
 
 async def cmd_top(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = update.message or update.effective_message
