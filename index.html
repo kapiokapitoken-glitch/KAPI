@@ -16,8 +16,8 @@
   <link rel="apple-touch-icon" sizes="256x256" href="./icons/icon-256.png" />
   <link rel="icon" type="image/png" href="./icons/icon-256.png" />
 
-  <!-- Game styles -->
-  <link rel="stylesheet" href="./style.css" />
+  <!-- Game styles (cache-bust with ?v=) -->
+  <link rel="stylesheet" href="./style.css?v=20250912" />
 </head>
 <body>
   <noscript>
@@ -27,7 +27,7 @@
     </div>
   </noscript>
 
-  <!-- iOS audio unlock (prevents false "unsupported" screens) -->
+  <!-- 0) iOS audio unlock -->
   <script>
     document.addEventListener("touchstart", function () {
       try {
@@ -40,13 +40,32 @@
     }, { once: true });
   </script>
 
-  <!-- Construct boot scripts (relative!) -->
-  <script src="./scripts/supportcheck.js"></script>
-  <script type="module" src="./scripts/offlineclient.js"></script>
-  <script type="module" src="./scripts/main.js"></script>
+  <!-- 1) KÖK: Eski Service Worker ve CacheStorage'ı tamamen temizle -->
+  <script>
+    (function() {
+      if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.getRegistrations()
+          .then(list => list.forEach(r => r.unregister()))
+          .catch(()=>{});
+      }
+      if (window.caches && caches.keys) {
+        caches.keys()
+          .then(keys => Promise.all(keys.map(k => caches.delete(k))))
+          .catch(()=>{});
+      }
+    })();
+  </script>
 
-  <!-- Service worker deliberately DISABLED for iOS WebView stability.
-       Re-enable later by providing a working register-sw.js and sw.js. -->
+  <!-- 2) Construct boot scripts (relative!) -->
+  <script src="./scripts/supportcheck.js?v=20250912"></script>
+
+  <!-- ÖNEMLİ: offlineclient.js'yi şimdilik devre dışı bırakıyoruz -->
+  <!-- <script type="module" src="./scripts/offlineclient.js"></script> -->
+
+  <!-- Ana oyun bundle (cache-bust ile) -->
+  <script type="module" src="./scripts/main.js?v=20250912"></script>
+
+  <!-- NOT: register-sw.js devre dışı (geliştirme için daha stabil) -->
   <!-- <script type="module" src="./scripts/register-sw.js"></script> -->
 </body>
 </html>
