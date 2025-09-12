@@ -1,4 +1,4 @@
-# bot/main.py  (ASCII only)
+# bot/main.py
 import os
 import sys
 import json
@@ -59,27 +59,50 @@ async def serve_index():
         return FileResponse(index_path, media_type="text/html")
     return JSONResponse({"ok": True, "hint": "index.html not found"}, status_code=200)
 
-# Serve top-level files needed by the game shell
+# ---------- Top-level game shell files ----------
 @app.get("/offline.json")
 async def serve_offline_json():
-    fp = os.path.join(os.getcwd(), "offline.json")
-    if os.path.isfile(fp):
-        return FileResponse(fp, media_type="application/json")
+    candidates = [
+        os.path.join(os.getcwd(), "offline.json"),
+        os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "offline.json")),
+    ]
+    for p in candidates:
+        if os.path.isfile(p):
+            return FileResponse(p, media_type="application/json")
+    print("offline.json not found, tried:", candidates, file=sys.stderr)
     raise HTTPException(status_code=404, detail="offline.json not found")
 
 @app.get("/manifest.json")
 async def serve_manifest():
-    fp = os.path.join(os.getcwd(), "manifest.json")
-    if os.path.isfile(fp):
-        return FileResponse(fp, media_type="application/json")
+    candidates = [
+        os.path.join(os.getcwd(), "manifest.json"),
+        os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "manifest.json")),
+    ]
+    for p in candidates:
+        if os.path.isfile(p):
+            return FileResponse(p, media_type="application/json")
     raise HTTPException(status_code=404, detail="manifest.json not found")
 
 @app.get("/favicon.ico")
 async def serve_favicon():
-    fp = os.path.join(os.getcwd(), "favicon.ico")
-    if os.path.isfile(fp):
-        return FileResponse(fp, media_type="image/x-icon")
+    candidates = [
+        os.path.join(os.getcwd(), "favicon.ico"),
+        os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "favicon.ico")),
+    ]
+    for p in candidates:
+        if os.path.isfile(p):
+            return FileResponse(p, media_type="image/x-icon")
     raise HTTPException(status_code=404, detail="favicon not found")
+
+# Debug: list working dir
+@app.get("/debug/ls")
+async def debug_ls():
+    root = os.getcwd()
+    try:
+        items = os.listdir(root)
+    except Exception as e:
+        items = [f"<ls error: {e}>"]
+    return {"cwd": root, "files": items}
 
 # =========================
 # DATABASE (async)
