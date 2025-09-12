@@ -60,41 +60,85 @@ async def serve_index():
     return JSONResponse({"ok": True, "hint": "index.html not found"}, status_code=200)
 
 # ---------- Top-level game shell files ----------
+def _first_existing(paths_with_mime):
+    for p, mime in paths_with_mime:
+        p = os.path.abspath(p)
+        if os.path.isfile(p):
+            return p, mime
+    return None, None
+
 @app.get("/offline.json")
 async def serve_offline_json():
-    candidates = [
-        os.path.join(os.getcwd(), "offline.json"),
-        os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "offline.json")),
-    ]
-    for p in candidates:
-        if os.path.isfile(p):
-            return FileResponse(p, media_type="application/json")
-    print("offline.json not found, tried:", candidates, file=sys.stderr)
+    p, mime = _first_existing([
+        (os.path.join(os.getcwd(), "offline.json"), "application/json"),
+        (os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "offline.json")), "application/json"),
+    ])
+    if p:
+        return FileResponse(p, media_type=mime)
+    print("offline.json not found", file=sys.stderr)
     raise HTTPException(status_code=404, detail="offline.json not found")
 
 @app.get("/manifest.json")
 async def serve_manifest():
-    candidates = [
-        os.path.join(os.getcwd(), "manifest.json"),
-        os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "manifest.json")),
-    ]
-    for p in candidates:
-        if os.path.isfile(p):
-            return FileResponse(p, media_type="application/json")
+    p, mime = _first_existing([
+        (os.path.join(os.getcwd(), "manifest.json"), "application/json"),
+        (os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "manifest.json")), "application/json"),
+    ])
+    if p:
+        return FileResponse(p, media_type=mime)
     raise HTTPException(status_code=404, detail="manifest.json not found")
+
+@app.get("/appmanifest.json")
+async def serve_appmanifest_json():
+    p, mime = _first_existing([
+        (os.path.join(os.getcwd(), "appmanifest.json"), "application/manifest+json"),
+        (os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "appmanifest.json")), "application/manifest+json"),
+    ])
+    if p:
+        return FileResponse(p, media_type=mime)
+    raise HTTPException(status_code=404, detail="appmanifest.json not found")
 
 @app.get("/favicon.ico")
 async def serve_favicon():
-    candidates = [
-        os.path.join(os.getcwd(), "favicon.ico"),
-        os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "favicon.ico")),
-    ]
-    for p in candidates:
-        if os.path.isfile(p):
-            return FileResponse(p, media_type="image/x-icon")
+    p, mime = _first_existing([
+        (os.path.join(os.getcwd(), "favicon.ico"), "image/x-icon"),
+        (os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "favicon.ico")), "image/x-icon"),
+    ])
+    if p:
+        return FileResponse(p, media_type=mime)
     raise HTTPException(status_code=404, detail="favicon not found")
 
-# Debug: list working dir
+@app.get("/style.css")
+async def serve_style_css():
+    p, mime = _first_existing([
+        (os.path.join(os.getcwd(), "style.css"), "text/css"),
+        (os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "style.css")), "text/css"),
+    ])
+    if p:
+        return FileResponse(p, media_type=mime)
+    raise HTTPException(status_code=404, detail="style.css not found")
+
+@app.get("/data.json")
+async def serve_data_json():
+    p, mime = _first_existing([
+        (os.path.join(os.getcwd(), "data.json"), "application/json"),
+        (os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "data.json")), "application/json"),
+    ])
+    if p:
+        return FileResponse(p, media_type=mime)
+    raise HTTPException(status_code=404, detail="data.json not found")
+
+@app.get("/sw.js")
+async def serve_service_worker():
+    p, mime = _first_existing([
+        (os.path.join(os.getcwd(), "sw.js"), "application/javascript"),
+        (os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "sw.js")), "application/javascript"),
+    ])
+    if p:
+        return FileResponse(p, media_type=mime)
+    raise HTTPException(status_code=404, detail="sw.js not found")
+
+# Debug: list working dir (remove in prod if you want)
 @app.get("/debug/ls")
 async def debug_ls():
     root = os.getcwd()
