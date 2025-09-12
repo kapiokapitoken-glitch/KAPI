@@ -1,46 +1,43 @@
-<!doctype html>
-<html lang="en">
+<!DOCTYPE html>
+<html>
 <head>
-  <meta charset="utf-8" />
-  <title>Scary Run</title>
+  <meta charset="UTF-8">
+  <title>KAPI RUN</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0, user-scalable=no">
 
-  <!-- Mobile / iOS friendly -->
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-  <meta name="theme-color" content="#000000" />
-  <meta name="apple-mobile-web-app-capable" content="yes" />
-  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="generator" content="Construct 3">
+  <meta name="author" content="Okapi Team">
+  <meta name="description" content="KAPI RUN Game">
 
-  <!-- PWA / icons (relative paths!) -->
-  <link rel="manifest" href="./appmanifest.json" />
-  <link rel="apple-touch-icon" sizes="128x128" href="./icons/icon-128.png" />
-  <link rel="apple-touch-icon" sizes="256x256" href="./icons/icon-256.png" />
-  <link rel="icon" type="image/png" href="./icons/icon-256.png" />
+  <!-- Manifest & Icons -->
+  <link rel="manifest" href="./appmanifest.json">
+  <link rel="apple-touch-icon" sizes="128x128" href="./icons/icon-128.png">
+  <link rel="apple-touch-icon" sizes="256x256" href="./icons/icon-256.png">
+  <link rel="icon" type="image/png" href="./icons/icon-256.png">
 
-  <!-- Game styles (cache-bust with ?v=) -->
-  <link rel="stylesheet" href="./style.css?v=20250912" />
+  <link rel="stylesheet" href="./style.css?v=2">
 </head>
 <body>
+  <div id="fb-root"></div>
+
   <noscript>
     <div id="notSupportedWrap">
       <h2 id="notSupportedTitle">This content requires JavaScript</h2>
-      <p class="notSupportedMessage">Please enable JavaScript to view this content.</p>
+      <p class="notSupportedMessage">JavaScript appears to be disabled. Please enable it to view this content.</p>
     </div>
   </noscript>
 
-  <!-- 0) iOS audio unlock -->
+  <!-- iOS Audio unlock -->
   <script>
     document.addEventListener("touchstart", function () {
       try {
         var Ctx = window.AudioContext || window.webkitAudioContext;
-        if (Ctx) {
-          var ctx = new Ctx();
-          if (ctx.state === "suspended" && ctx.resume) ctx.resume();
-        }
+        if (Ctx) { var ctx = new Ctx(); if (ctx.state === "suspended" && ctx.resume) ctx.resume(); }
       } catch (e) {}
     }, { once: true });
   </script>
 
-  <!-- 1) KÖK: Eski Service Worker ve CacheStorage'ı tamamen temizle -->
+  <!-- Cache temizliği (SW ve eski görselleri iptal et) -->
   <script>
     (function() {
       if ('serviceWorker' in navigator) {
@@ -49,23 +46,21 @@
           .catch(()=>{});
       }
       if (window.caches && caches.keys) {
-        caches.keys()
-          .then(keys => Promise.all(keys.map(k => caches.delete(k))))
-          .catch(()=>{});
+        caches.keys().then(keys => Promise.all(keys.map(k => caches.delete(k)))).catch(()=>{});
       }
     })();
   </script>
 
-  <!-- 2) Construct boot scripts (relative!) -->
-  <script src="./scripts/supportcheck.js?v=20250912"></script>
+  <!-- iOS Telegram siyah ekran fix -->
+  <script>window.C3_NO_WORKER = true;</script>
 
-  <!-- ÖNEMLİ: offlineclient.js'yi şimdilik devre dışı bırakıyoruz -->
+  <!-- Construct boot scripts -->
+  <script src="./scripts/supportcheck.js?v=2" crossorigin="anonymous"></script>
+  <script src="./scripts/modernjscheck.js?v=2" crossorigin="anonymous"></script>
+  <!-- offlineclient/register-sw kapalı bırakıyoruz -->
   <!-- <script type="module" src="./scripts/offlineclient.js"></script> -->
-
-  <!-- Ana oyun bundle (cache-bust ile) -->
-  <script type="module" src="./scripts/main.js?v=20250912"></script>
-
-  <!-- NOT: register-sw.js devre dışı (geliştirme için daha stabil) -->
   <!-- <script type="module" src="./scripts/register-sw.js"></script> -->
+
+  <script type="module" src="./scripts/main.js?v=2" crossorigin="anonymous"></script>
 </body>
 </html>
