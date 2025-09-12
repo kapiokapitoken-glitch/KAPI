@@ -1,10 +1,11 @@
+# bot/main.py  (ASCII-only, FastAPI + PTB v21 + SQLAlchemy async + psycopg3)
 import os
 import hmac
 import hashlib
 from typing import Any, Dict, Optional
 
-from fastapi import FastAPI, Request, HTTPException
-from fastapi.responses import JSONResponse, FileResponse
+from fastapi import FastAPI, Request, HTTPException, status
+from fastapi.responses import JSONResponse, FileResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncEngine
@@ -13,18 +14,26 @@ from sqlalchemy import text
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, ContextTypes
 
-# ============== ENV ==============
+# =========================
+# ENV
+# =========================
 TELEGRAM_BOT_TOKEN = os.environ["TELEGRAM_BOT_TOKEN"]
-DATABASE_URL       = os.environ.get("DATABASE_URL")
-SECRET             = os.environ.get("SECRET", "")
-PUBLIC_GAME_URL    = os.environ.get("PUBLIC_GAME_URL", "/")
-GAME_SHORT_NAME    = os.environ.get("GAME_SHORT_NAME", "kapi_run")
-WEBHOOK_PATH       = os.environ.get("WEBHOOK_PATH", "/tg/webhook")
+DATABASE_URL = (os.environ.get("DATABASE_URL") or "").strip()
+SECRET = (os.environ.get("SECRET") or "").strip()
+PUBLIC_GAME_URL = (os.environ.get("PUBLIC_GAME_URL") or "/").strip()
 
-# ============== FASTAPI ==========
+GAME_SHORT_NAME = (os.environ.get("GAME_SHORT_NAME") or "kapi_run").strip()
+
+WEBHOOK_PATH = (os.environ.get("WEBHOOK_PATH") or "/tg/webhook").strip()
+if not WEBHOOK_PATH.startswith("/"):
+    WEBHOOK_PATH = "/" + WEBHOOK_PATH  # normalize
+
+# =========================
+# FASTAPI
+# =========================
 app = FastAPI(title="KAPI RUN - Bot & API")
 
-# Mount static dirs if present
+# Static mounts (if dirs exist)
 if os.path.isdir("images"):
     app.mount("/images", StaticFiles(directory="images"), name="images")
 if os.path.isdir("scripts"):
@@ -49,25 +58,39 @@ async def serve_index():
         return FileResponse(index_path, media_type="text/html")
     return JSONResponse({"ok": True, "hint": "index.html not found"}, status_code=200)
 
-# ============== DATABASE =========
+# =========================
+# DATABASE (async)
+# =========================
 engine: Optional[AsyncEngine] = None
 
 async def ensure_schema() -> None:
+    """
+    Make schema idempotent: create table if not exists, then add missing columns, then index.
+    Safe to run repeatedly on startup.
+    """
     assert engine is not None
     async with engine.begin() as conn:
+        # Base table
         await conn.execute(text("""
-        CREATE TABLE IF NOT EXISTS scores (
-            user_id    BIGINT PRIMARY KEY,
-            username   TEXT,
-            best_score INTEGER NOT NULL DEFAULT 0,
-            updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
-        );
+            CREATE TABLE IF NOT EXISTS scores (
+                user_id BIGINT PRIMARY KEY
+            );
         """))
+        # Add missing columns
         await conn.execute(text("""
-        CREATE INDEX IF NOT EXISTS idx_scores_best ON scores (best_score DESC);
+            ALTER TABLE scores
+              ADD COLUMN IF NOT EXISTS username   TEXT,
+              ADD COLUMN IF NOT EXISTS best_score INTEGER NOT NULL DEFAULT 0,
+              ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT now();
+        """))
+        # Index
+        await conn.execute(text("""
+            CREATE INDEX IF NOT EXISTS idx_scores_best ON scores (best_score DESC);
         """))
 
-# ============== TELEGRAM =========
+# =========================
+# TELEGRAM (python-telegram-bot v21)
+# =========================
 telegram_app: Application = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
 
 def _fmt_user(u: Optional[str], uid: int) -> str:
@@ -102,7 +125,7 @@ async def cmd_top(update: Update, context: ContextTypes.DEFAULT_TYPE):
     for i, r in enumerate(rows, 1):
         uname = _fmt_user(r._mapping["username"], r._mapping["user_id"])
         score = r._mapping["best_score"]
-        lines.append(f"{i}. @{uname} ? {score}")
+        lines.append(f"{i}. @{uname} - {score}")
         if len("\n".join(lines)) > 3500:
             lines.append("...")
             break
@@ -111,15 +134,24 @@ async def cmd_top(update: Update, context: ContextTypes.DEFAULT_TYPE):
 telegram_app.add_handler(CommandHandler("start", cmd_start))
 telegram_app.add_handler(CommandHandler("top",   cmd_top))
 
-# ============== WEBHOOK ==========
-@app.post(WEBHOOK_PATH)
+# =========================
+# WEBHOOK (accept GET for quick check, POST for Telegram)
+# =========================
+@app.api_route(WEBHOOK_PATH, methods=["GET", "POST"])
 async def telegram_webhook(request: Request):
+    if request.method == "GET":
+        # simple browser check: should return 200 OK
+        return PlainTextResponse("OK", status_code=status.HTTP_200_OK)
+
+    # POST from Telegram
     data = await request.json()
     update = Update.de_json(data, telegram_app.bot)
     await telegram_app.process_update(update)
     return {"ok": True}
 
-# ============== SCORE API ========
+# =========================
+# SCORE API (HMAC signed)
+# =========================
 def _hmac_ok(user_id: int, score: int, sig: str) -> bool:
     if not SECRET:
         return False
@@ -133,10 +165,10 @@ async def post_score(payload: Dict[str, Any]):
         if k not in payload:
             raise HTTPException(status_code=400, detail=f"missing field: {k}")
 
-    user_id  = int(payload["user_id"])
+    user_id = int(payload["user_id"])
     username = _fmt_user(str(payload["username"] or ""), user_id)
-    score    = int(payload["score"])
-    sig      = str(payload["sig"])
+    score = int(payload["score"])
+    sig = str(payload["sig"])
 
     if not _hmac_ok(user_id, score, sig):
         raise HTTPException(status_code=401, detail="invalid signature")
@@ -171,7 +203,9 @@ async def leaderboard(limit: int = 200):
         rows = [dict(r._mapping) for r in res]
     return rows
 
-# ============== LIFECYCLE ========
+# =========================
+# LIFECYCLE
+# =========================
 @app.on_event("startup")
 async def on_startup():
     await telegram_app.initialize()
