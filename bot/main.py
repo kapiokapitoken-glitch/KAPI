@@ -1,5 +1,7 @@
-# bot/main.py  (ASCII-only, FastAPI + PTB v21 + SQLAlchemy async + psycopg3)
+# bot/main.py  (ASCII only)
 import os
+import sys
+import json
 import hmac
 import hashlib
 from typing import Any, Dict, Optional
@@ -21,7 +23,6 @@ TELEGRAM_BOT_TOKEN = os.environ["TELEGRAM_BOT_TOKEN"]
 DATABASE_URL = (os.environ.get("DATABASE_URL") or "").strip()
 SECRET = (os.environ.get("SECRET") or "").strip()
 PUBLIC_GAME_URL = (os.environ.get("PUBLIC_GAME_URL") or "/").strip()
-
 GAME_SHORT_NAME = (os.environ.get("GAME_SHORT_NAME") or "kapi_run").strip()
 
 WEBHOOK_PATH = (os.environ.get("WEBHOOK_PATH") or "/tg/webhook").strip()
@@ -33,7 +34,7 @@ if not WEBHOOK_PATH.startswith("/"):
 # =========================
 app = FastAPI(title="KAPI RUN - Bot & API")
 
-# Static mounts (if dirs exist)
+# Serve common static folders if they exist
 if os.path.isdir("images"):
     app.mount("/images", StaticFiles(directory="images"), name="images")
 if os.path.isdir("scripts"):
@@ -58,6 +59,28 @@ async def serve_index():
         return FileResponse(index_path, media_type="text/html")
     return JSONResponse({"ok": True, "hint": "index.html not found"}, status_code=200)
 
+# Serve top-level files needed by the game shell
+@app.get("/offline.json")
+async def serve_offline_json():
+    fp = os.path.join(os.getcwd(), "offline.json")
+    if os.path.isfile(fp):
+        return FileResponse(fp, media_type="application/json")
+    raise HTTPException(status_code=404, detail="offline.json not found")
+
+@app.get("/manifest.json")
+async def serve_manifest():
+    fp = os.path.join(os.getcwd(), "manifest.json")
+    if os.path.isfile(fp):
+        return FileResponse(fp, media_type="application/json")
+    raise HTTPException(status_code=404, detail="manifest.json not found")
+
+@app.get("/favicon.ico")
+async def serve_favicon():
+    fp = os.path.join(os.getcwd(), "favicon.ico")
+    if os.path.isfile(fp):
+        return FileResponse(fp, media_type="image/x-icon")
+    raise HTTPException(status_code=404, detail="favicon not found")
+
 # =========================
 # DATABASE (async)
 # =========================
@@ -65,12 +88,11 @@ engine: Optional[AsyncEngine] = None
 
 async def ensure_schema() -> None:
     """
-    Make schema idempotent: create table if not exists, then add missing columns, then index.
-    Safe to run repeatedly on startup.
+    Idempotent schema setup: safe to run at every startup.
     """
     assert engine is not None
     async with engine.begin() as conn:
-        # Base table
+        # Create base table if missing
         await conn.execute(text("""
             CREATE TABLE IF NOT EXISTS scores (
                 user_id BIGINT PRIMARY KEY
@@ -83,7 +105,7 @@ async def ensure_schema() -> None:
               ADD COLUMN IF NOT EXISTS best_score INTEGER NOT NULL DEFAULT 0,
               ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT now();
         """))
-        # Index
+        # Index for leaderboard
         await conn.execute(text("""
             CREATE INDEX IF NOT EXISTS idx_scores_best ON scores (best_score DESC);
         """))
@@ -100,15 +122,18 @@ def _fmt_user(u: Optional[str], uid: int) -> str:
     return u[1:] if u.startswith("@") else u
 
 async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    msg = update.message or update.effective_message
+    if not msg:
+        return
     kb = [[InlineKeyboardButton("Play the Game", url=PUBLIC_GAME_URL)]]
-    await update.message.reply_text(
-        "Welcome to KAPI RUN!",
-        reply_markup=InlineKeyboardMarkup(kb)
-    )
+    await msg.reply_text("Welcome to KAPI RUN!", reply_markup=InlineKeyboardMarkup(kb))
 
 async def cmd_top(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    msg = update.message or update.effective_message
+    if not msg:
+        return
     if engine is None:
-        await update.message.reply_text("Leaderboard is not available (DB not configured).")
+        await msg.reply_text("Leaderboard is not available (DB not configured).")
         return
     async with engine.connect() as conn:
         res = await conn.execute(text("""
@@ -119,7 +144,7 @@ async def cmd_top(update: Update, context: ContextTypes.DEFAULT_TYPE):
         """))
         rows = list(res)
     if not rows:
-        await update.message.reply_text("No scores yet.")
+        await msg.reply_text("No scores yet.")
         return
     lines = []
     for i, r in enumerate(rows, 1):
@@ -129,22 +154,30 @@ async def cmd_top(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if len("\n".join(lines)) > 3500:
             lines.append("...")
             break
-    await update.message.reply_text("TOP SCORES\n" + "\n".join(lines))
+    await msg.reply_text("TOP SCORES\n" + "\n".join(lines))
 
 telegram_app.add_handler(CommandHandler("start", cmd_start))
 telegram_app.add_handler(CommandHandler("top",   cmd_top))
 
 # =========================
-# WEBHOOK (accept GET for quick check, POST for Telegram)
+# WEBHOOK (GET=probe, POST=Telegram)
 # =========================
 @app.api_route(WEBHOOK_PATH, methods=["GET", "POST"])
 async def telegram_webhook(request: Request):
     if request.method == "GET":
-        # simple browser check: should return 200 OK
+        # Simple check in browser
         return PlainTextResponse("OK", status_code=status.HTTP_200_OK)
 
-    # POST from Telegram
-    data = await request.json()
+    try:
+        data = await request.json()
+    except Exception:
+        body = await request.body()
+        print("WEBHOOK parse error, raw body:", body[:500], file=sys.stderr)
+        return JSONResponse({"ok": False, "error": "invalid json"}, status_code=400)
+
+    # Minimal log to DO logs
+    print("WEBHOOK update:", json.dumps(data)[:500], file=sys.stderr)
+
     update = Update.de_json(data, telegram_app.bot)
     await telegram_app.process_update(update)
     return {"ok": True}
