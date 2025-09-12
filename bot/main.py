@@ -9,6 +9,7 @@ from typing import Any, Dict, Optional
 from fastapi import FastAPI, Request, HTTPException, status
 from fastapi.responses import JSONResponse, FileResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.middleware.base import BaseHTTPMiddleware   # <--- cache middleware için
 
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncEngine
 from sqlalchemy import text
@@ -34,7 +35,22 @@ if not WEBHOOK_PATH.startswith("/"):
 # =========================
 app = FastAPI(title="KAPI RUN - Bot & API")
 
-# Serve common static folders if they exist
+# ---- Cache disable middleware ----
+class NoStoreForStatic(BaseHTTPMiddleware):
+    async def dispatch(self, request, call_next):
+        response = await call_next(request)
+        p = request.url.path or ""
+        if p.startswith(("/images", "/scripts", "/media", "/icons")) or p in (
+            "/style.css", "/data.json", "/appmanifest.json", "/sw.js", "/offline.json", "/index.html"
+        ):
+            response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+            response.headers["Pragma"] = "no-cache"
+            response.headers["Expires"] = "0"
+        return response
+
+app.add_middleware(NoStoreForStatic)
+
+# Mount static dirs if present
 if os.path.isdir("images"):
     app.mount("/images", StaticFiles(directory="images"), name="images")
 if os.path.isdir("scripts"):
@@ -59,126 +75,31 @@ async def serve_index():
         return FileResponse(index_path, media_type="text/html")
     return JSONResponse({"ok": True, "hint": "index.html not found"}, status_code=200)
 
-# ---------- Top-level game shell files ----------
-def _first_existing(paths_with_mime):
-    for p, mime in paths_with_mime:
-        p = os.path.abspath(p)
-        if os.path.isfile(p):
-            return p, mime
-    return None, None
-
-@app.get("/offline.json")
-async def serve_offline_json():
-    p, mime = _first_existing([
-        (os.path.join(os.getcwd(), "offline.json"), "application/json"),
-        (os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "offline.json")), "application/json"),
-    ])
-    if p:
-        return FileResponse(p, media_type=mime)
-    print("offline.json not found", file=sys.stderr)
-    raise HTTPException(status_code=404, detail="offline.json not found")
-
-@app.get("/manifest.json")
-async def serve_manifest():
-    p, mime = _first_existing([
-        (os.path.join(os.getcwd(), "manifest.json"), "application/json"),
-        (os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "manifest.json")), "application/json"),
-    ])
-    if p:
-        return FileResponse(p, media_type=mime)
-    raise HTTPException(status_code=404, detail="manifest.json not found")
-
-@app.get("/appmanifest.json")
-async def serve_appmanifest_json():
-    p, mime = _first_existing([
-        (os.path.join(os.getcwd(), "appmanifest.json"), "application/manifest+json"),
-        (os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "appmanifest.json")), "application/manifest+json"),
-    ])
-    if p:
-        return FileResponse(p, media_type=mime)
-    raise HTTPException(status_code=404, detail="appmanifest.json not found")
-
-@app.get("/favicon.ico")
-async def serve_favicon():
-    p, mime = _first_existing([
-        (os.path.join(os.getcwd(), "favicon.ico"), "image/x-icon"),
-        (os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "favicon.ico")), "image/x-icon"),
-    ])
-    if p:
-        return FileResponse(p, media_type=mime)
-    raise HTTPException(status_code=404, detail="favicon not found")
-
-@app.get("/style.css")
-async def serve_style_css():
-    p, mime = _first_existing([
-        (os.path.join(os.getcwd(), "style.css"), "text/css"),
-        (os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "style.css")), "text/css"),
-    ])
-    if p:
-        return FileResponse(p, media_type=mime)
-    raise HTTPException(status_code=404, detail="style.css not found")
-
-@app.get("/data.json")
-async def serve_data_json():
-    p, mime = _first_existing([
-        (os.path.join(os.getcwd(), "data.json"), "application/json"),
-        (os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "data.json")), "application/json"),
-    ])
-    if p:
-        return FileResponse(p, media_type=mime)
-    raise HTTPException(status_code=404, detail="data.json not found")
-
-@app.get("/sw.js")
-async def serve_service_worker():
-    p, mime = _first_existing([
-        (os.path.join(os.getcwd(), "sw.js"), "application/javascript"),
-        (os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "sw.js")), "application/javascript"),
-    ])
-    if p:
-        return FileResponse(p, media_type=mime)
-    raise HTTPException(status_code=404, detail="sw.js not found")
-
-# Debug: list working dir (remove in prod if you want)
-@app.get("/debug/ls")
-async def debug_ls():
-    root = os.getcwd()
-    try:
-        items = os.listdir(root)
-    except Exception as e:
-        items = [f"<ls error: {e}>"]
-    return {"cwd": root, "files": items}
-
 # =========================
-# DATABASE (async)
+# DATABASE
 # =========================
 engine: Optional[AsyncEngine] = None
 
 async def ensure_schema() -> None:
-    """
-    Idempotent schema setup: safe to run at every startup.
-    """
     assert engine is not None
     async with engine.begin() as conn:
-        # Create base table if missing
         await conn.execute(text("""
             CREATE TABLE IF NOT EXISTS scores (
                 user_id BIGINT PRIMARY KEY
             );
         """))
-        # Add missing columns
         await conn.execute(text("""
             ALTER TABLE scores
               ADD COLUMN IF NOT EXISTS username   TEXT,
               ADD COLUMN IF NOT EXISTS best_score INTEGER NOT NULL DEFAULT 0,
               ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT now();
         """))
-        # Index for leaderboard
         await conn.execute(text("""
             CREATE INDEX IF NOT EXISTS idx_scores_best ON scores (best_score DESC);
         """))
 
 # =========================
-# TELEGRAM (python-telegram-bot v21)
+# TELEGRAM
 # =========================
 telegram_app: Application = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
 
@@ -224,33 +145,28 @@ async def cmd_top(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await msg.reply_text("TOP SCORES\n" + "\n".join(lines))
 
 telegram_app.add_handler(CommandHandler("start", cmd_start))
-telegram_app.add_handler(CommandHandler("top",   cmd_top))
+telegram_app.add_handler(CommandHandler("top", cmd_top))
 
 # =========================
-# WEBHOOK (GET=probe, POST=Telegram)
+# WEBHOOK
 # =========================
 @app.api_route(WEBHOOK_PATH, methods=["GET", "POST"])
 async def telegram_webhook(request: Request):
     if request.method == "GET":
-        # Simple check in browser
         return PlainTextResponse("OK", status_code=status.HTTP_200_OK)
-
     try:
         data = await request.json()
     except Exception:
         body = await request.body()
-        print("WEBHOOK parse error, raw body:", body[:500], file=sys.stderr)
+        print("WEBHOOK parse error:", body[:500], file=sys.stderr)
         return JSONResponse({"ok": False, "error": "invalid json"}, status_code=400)
-
-    # Minimal log to DO logs
     print("WEBHOOK update:", json.dumps(data)[:500], file=sys.stderr)
-
     update = Update.de_json(data, telegram_app.bot)
     await telegram_app.process_update(update)
     return {"ok": True}
 
 # =========================
-# SCORE API (HMAC signed)
+# SCORE API
 # =========================
 def _hmac_ok(user_id: int, score: int, sig: str) -> bool:
     if not SECRET:
@@ -264,18 +180,14 @@ async def post_score(payload: Dict[str, Any]):
     for k in ("user_id", "username", "score", "sig"):
         if k not in payload:
             raise HTTPException(status_code=400, detail=f"missing field: {k}")
-
     user_id = int(payload["user_id"])
     username = _fmt_user(str(payload["username"] or ""), user_id)
     score = int(payload["score"])
     sig = str(payload["sig"])
-
     if not _hmac_ok(user_id, score, sig):
         raise HTTPException(status_code=401, detail="invalid signature")
-
     if engine is None:
         raise HTTPException(status_code=500, detail="database not configured")
-
     async with engine.begin() as conn:
         await conn.execute(text("""
             INSERT INTO scores (user_id, username, best_score)
@@ -285,7 +197,6 @@ async def post_score(payload: Dict[str, Any]):
                 best_score = GREATEST(scores.best_score, EXCLUDED.best_score),
                 updated_at = now();
         """), {"uid": user_id, "uname": username, "s": score})
-
     return {"ok": True, "saved": True}
 
 @app.get("/api/leaderboard")
