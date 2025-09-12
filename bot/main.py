@@ -9,7 +9,7 @@ from typing import Any, Dict, Optional
 from fastapi import FastAPI, Request, HTTPException, status
 from fastapi.responses import JSONResponse, FileResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
-from starlette.middleware.base import BaseHTTPMiddleware   # <--- cache middleware için
+from starlette.middleware.base import BaseHTTPMiddleware
 
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncEngine
 from sqlalchemy import text
@@ -41,7 +41,8 @@ class NoStoreForStatic(BaseHTTPMiddleware):
         response = await call_next(request)
         p = request.url.path or ""
         if p.startswith(("/images", "/scripts", "/media", "/icons")) or p in (
-            "/style.css", "/data.json", "/appmanifest.json", "/sw.js", "/offline.json", "/index.html"
+            "/style.css", "/data.json", "/appmanifest.json", "/manifest.json",
+            "/sw.js", "/offline.json", "/index.html"
         ):
             response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
             response.headers["Pragma"] = "no-cache"
@@ -74,6 +75,72 @@ async def serve_index():
     if os.path.isfile(index_path):
         return FileResponse(index_path, media_type="text/html")
     return JSONResponse({"ok": True, "hint": "index.html not found"}, status_code=200)
+
+# ---------- Root-level game files ----------
+def _first_existing(filename: str, fallback: bool = True):
+    # 1) CWD (project root on DO)
+    p1 = os.path.join(os.getcwd(), filename)
+    if os.path.isfile(p1):
+        return p1
+    # 2) Optional fallback to parent of this file
+    if fallback:
+        base = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+        p2 = os.path.join(base, filename)
+        if os.path.isfile(p2):
+            return p2
+    return None
+
+@app.get("/style.css")
+async def serve_style_css():
+    p = _first_existing("style.css")
+    if p:
+        return FileResponse(p, media_type="text/css")
+    raise HTTPException(status_code=404, detail="style.css not found")
+
+@app.get("/data.json")
+async def serve_data_json():
+    p = _first_existing("data.json")
+    if p:
+        return FileResponse(p, media_type="application/json")
+    raise HTTPException(status_code=404, detail="data.json not found")
+
+@app.get("/appmanifest.json")
+async def serve_appmanifest_json():
+    p = _first_existing("appmanifest.json")
+    if p:
+        return FileResponse(p, media_type="application/manifest+json")
+    raise HTTPException(status_code=404, detail="appmanifest.json not found")
+
+@app.get("/manifest.json")
+async def serve_manifest_json():
+    p = _first_existing("manifest.json")
+    if p:
+        return FileResponse(p, media_type="application/manifest+json")
+    raise HTTPException(status_code=404, detail="manifest.json not found")
+
+@app.get("/sw.js")
+async def serve_service_worker():
+    p = _first_existing("sw.js")
+    if p:
+        return FileResponse(p, media_type="application/javascript")
+    raise HTTPException(status_code=404, detail="sw.js not found")
+
+@app.get("/offline.json")
+async def serve_offline_json():
+    p = _first_existing("offline.json")
+    if p:
+        return FileResponse(p, media_type="application/json")
+    raise HTTPException(status_code=404, detail="offline.json not found")
+
+# Debug helper (optional)
+@app.get("/debug/ls")
+async def debug_ls():
+    root = os.getcwd()
+    try:
+        items = sorted(os.listdir(root))
+    except Exception as e:
+        items = [f"<ls error: {e}>"]
+    return {"cwd": root, "files": items}
 
 # =========================
 # DATABASE
@@ -145,7 +212,7 @@ async def cmd_top(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await msg.reply_text("TOP SCORES\n" + "\n".join(lines))
 
 telegram_app.add_handler(CommandHandler("start", cmd_start))
-telegram_app.add_handler(CommandHandler("top", cmd_top))
+telegram_app.add_handler(CommandHandler("top",   cmd_top))
 
 # =========================
 # WEBHOOK
