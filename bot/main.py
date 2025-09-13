@@ -103,10 +103,22 @@ async def serve_style_css():
 
 @app.get("/data.json")
 async def serve_data_json():
+    """
+    data.json'u kökten servis eder ve agresif cache'i engeller.
+    """
     p = _first_existing("data.json")
-    if p:
-        return FileResponse(p, media_type="application/json")
-    raise HTTPException(status_code=404, detail="data.json not found")
+    if not p:
+        raise HTTPException(status_code=404, detail="data.json not found")
+
+    return FileResponse(
+        p,
+        media_type="application/json",
+        headers={
+            "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+            "Pragma": "no-cache",
+            "Expires": "0"
+        }
+    )
 
 @app.get("/appmanifest.json")
 async def serve_appmanifest_json():
@@ -131,10 +143,22 @@ async def serve_service_worker():
 
 @app.get("/offline.json")
 async def serve_offline_json():
+    """
+    offline.json'u kökten servis eder ve agresif cache'i engeller.
+    """
     p = _first_existing("offline.json")
-    if p:
-        return FileResponse(p, media_type="application/json")
-    raise HTTPException(status_code=404, detail="offline.json not found")
+    if not p:
+        raise HTTPException(status_code=404, detail="offline.json not found")
+
+    return FileResponse(
+        p,
+        media_type="application/json",
+        headers={
+            "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+            "Pragma": "no-cache",
+            "Expires": "0"
+        }
+    )
 
 # Debug helper (optional)
 @app.get("/debug/ls")
