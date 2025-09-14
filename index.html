@@ -233,13 +233,17 @@
         }catch(e){ log("CTX error: " + e); }
       });
       var i=mkbtn("INIT", async function(){
-        try{
-          var TG = getTG(); var s=(TG&&TG.initData)||"";
-          if(navigator.clipboard&&navigator.clipboard.writeText){
-            await navigator.clipboard.writeText(s); console.log("[HUD] initData copied, len=", s.length);
-          } else {
-            prompt("Copy initData:", s);
-          }
+  try{
+    var TG = getTG();
+    var raw = (TG && TG.initData) || qsFromUnsafe(TG && TG.initDataUnsafe) || "";
+    if(navigator.clipboard && navigator.clipboard.writeText){
+      await navigator.clipboard.writeText(raw);
+      console.log("[HUD] initData copied, len=", raw.length, "hasHash=", /(?:^|&)hash=/.test(raw));
+    } else {
+      prompt("Copy initData:", raw);
+    }
+  }catch(e){ console.error("copy initData failed:", e); }
+});
         }catch(e){ console.error("copy initData failed:", e); }
       });
 
