@@ -10,7 +10,7 @@
   <meta name="description" content="KAPI RUN Game" />
 
   <!-- Manifest & Icons -->
-  <link rel="manifest" href="./appmanifest.json?v=20250917m" />
+  <link rel="manifest" href="./appmanifest.json?v=20250917r" />
   <link rel="apple-touch-icon" sizes="128x128" href="./icons/icon-128.png" />
   <link rel="apple-touch-icon" sizes="256x256" href="./icons/icon-256.png" />
   <link rel="icon" type="image/png" href="./icons/icon-256.png" />
@@ -37,7 +37,7 @@
     }, { once: true });
   </script>
 
-  <!-- Cache temizliği (varsa eski SW ve cache’leri iptal et) -->
+  <!-- SW & Cache temizliği -->
   <script>
     (function() {
       if ('serviceWorker' in navigator) {
@@ -51,16 +51,20 @@
     })();
   </script>
 
-  <!-- Worker kapalı (Telegram/iOS uyumu) -->
+  <!-- Worker'ı kapat (Telegram/iOS uyumu) -->
   <script>window.C3_NO_WORKER = true;</script>
 
-  <!-- Construct proje verisi yolu -->
+  <!-- Construct veri dosyası yolu -->
   <script>
-    window.C3_ProjectDataUrl = "data.json?v=20250917m";
+    // Elindeki data dosyasını KÖKTE data.json adına kopyaladık
+    window.C3_ProjectDataUrl = "data.json?v=20250917r";
+    window["C3_ProjectDataUrl"] = "data.json?v=20250917r"; // bazı eski build'ler bunu okuyor
   </script>
 
-  <!-- DİKKAT: supportcheck/modernjscheck KALDIRILDI -->
-  <!-- Doğrudan module main.js ile boot -->
-  <script type="module" src="./scripts/main.js?v=20250917m" crossorigin="anonymous"></script>
+  <!-- LEGACY CHECKLERİ YÜKLEME: supportcheck/modernjscheck KALDIRILDI -->
+
+  <!-- KLASİK BOOT: c3runtime + c3main -->
+  <script src="./scripts/c3runtime.js?v=20250917r" crossorigin="anonymous"></script>
+  <script src="./scripts/c3main.js?v=20250917r" crossorigin="anonymous"></script>
 </body>
 </html>
