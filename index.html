@@ -68,87 +68,102 @@
   <!-- INLINE DEBUG HUD + submitScore FALLBACK -->
   <script>
     (function(){
-      // --- FALLBACK SUBMITSCORE (tg-bridge.js yüklenmediyse) ---
-      (function(){
-        var W = window;
-        var TG = W.Telegram && W.Telegram.WebApp ? W.Telegram.WebApp : null;
-
-        function parseInitData(){
-          var out = {
-            init_data:null, user_id:null, username:null, first_name:null, last_name:null,
-            query_id:null, chat_type:null, chat_instance:null, auth_date:null, sig:null, hash:null
-          };
-          if (!TG || !TG.initData) return out;
-          var initData = TG.initData; out.init_data = initData;
-          try {
-            var params = new URLSearchParams(initData);
-            var userStr = params.get("user");
-            if (userStr) {
+      function parseInitData(){
+        var out = {
+          init_data:null, init_params:{}, user_json:null,
+          user_id:null, username:null, first_name:null, last_name:null,
+          query_id:null, chat_type:null, chat_instance:null,
+          start_param:null, can_send_after:null,
+          auth_date:null, hash:null, sig:null
+        };
+        var TG = window.Telegram && window.Telegram.WebApp ? window.Telegram.WebApp : null;
+        if (!TG || !TG.initData) return out;
+        var initData = TG.initData; out.init_data = initData;
+        try{
+          var params = new URLSearchParams(initData);
+          params.forEach(function(v,k){ out.init_params[k]=v; });
+          var userStr = params.get("user");
+          if (userStr) {
+            out.user_json = userStr;
+            try {
               var u = JSON.parse(userStr);
-              out.user_id = (u && u.id) || null;
-              out.username = (u && u.username) || null;
+              out.user_id    = (u && u.id) || null;
+              out.username   = (u && u.username) || null;
               out.first_name = (u && u.first_name) || null;
               out.last_name  = (u && u.last_name)  || null;
-            }
-            out.query_id = params.get("query_id");
-            out.chat_type = params.get("chat_type");
-            out.chat_instance = params.get("chat_instance");
-            var auth = params.get("auth_date");
-            out.auth_date = auth != null ? Number(auth) : null;
-            var hash = params.get("hash");
-            out.sig = hash;
-            out.hash = hash;
-          } catch(e) {}
-          return out;
-        }
+            } catch(e){}
+          }
+          out.query_id      = params.get("query_id");
+          out.chat_type     = params.get("chat_type");
+          out.chat_instance = params.get("chat_instance");
+          out.start_param   = params.get("start_param");
+          out.can_send_after = params.get("can_send_after");
+          var auth = params.get("auth_date");
+          out.auth_date = auth != null ? Number(auth) : null;
+          var hash = params.get("hash");
+          out.hash = hash;
+          out.sig  = hash;
+        }catch(e){}
+        return out;
+      }
 
-        if (typeof W.submitScore !== "function") {
-          W.submitScore = async function(score){
-            try{
-              if(!Number.isFinite(score) || score < 0) throw new Error("Invalid score");
-              var ctx = parseInitData();
-              var payload = {
-                score: Math.floor(score),
-                user_id: ctx.user_id,
-                username: ctx.username,
-                first_name: ctx.first_name,
-                last_name: ctx.last_name,
-                query_id: ctx.query_id,
-                chat_type: ctx.chat_type,
-                chat_instance: ctx.chat_instance,
-                auth_date: ctx.auth_date,
-                sig: ctx.sig,
-                hash: ctx.hash,
-                init_data: ctx.init_data
-              };
+      // --- FALLBACK SUBMITSCORE (tg-bridge.js yüklenmediyse) ---
+      if (typeof window.submitScore !== "function") {
+        window.submitScore = async function(score){
+          try{
+            if(!Number.isFinite(score) || score < 0) throw new Error("Invalid score");
+            var ctx = parseInitData();
+            var payload = {
+              score: Math.floor(score),
+              ts: Date.now(),
+              user_id: ctx.user_id,
+              username: ctx.username,
+              first_name: ctx.first_name,
+              last_name: ctx.last_name,
+              init_data: ctx.init_data,
+              init_params: ctx.init_params,
+              user: ctx.user_json,
+              hash: ctx.hash,
+              sig: ctx.sig,
+              auth_date: ctx.auth_date,
+              query_id: ctx.query_id,
+              chat_type: ctx.chat_type,
+              chat_instance: ctx.chat_instance,
+              start_param: ctx.start_param,
+              can_send_after: ctx.can_send_after,
+              href: (typeof location!=="undefined" && location.href) || null
+            };
 
-              console.log("[HUD] payload", {
-                score: payload.score,
-                user_id: payload.user_id,
-                username: payload.username,
-                sig_len: payload.sig ? payload.sig.length : 0,
-                auth_date: payload.auth_date,
-                init_len: ctx.init_data ? ctx.init_data.length : 0
-              });
+            console.log("[HUD] payload", {
+              score: payload.score,
+              user_id: payload.user_id,
+              username: payload.username,
+              sig_len: payload.sig ? payload.sig.length : 0,
+              auth_date: payload.auth_date,
+              init_len: payload.init_data ? payload.init_data.length : 0
+            });
 
-              var res = await fetch("/api/score", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify(payload),
-                credentials: "include"
-              });
-              var txt = ""; try { txt = await res.text(); } catch(e){}
-              console.log("[HUD submitScore] status", res.status, txt);
-            }catch(e){
-              console.error("[HUD submitScore] error:", e);
-            }
-          };
-          if (TG) { try { TG.ready(); } catch(e){} }
-          console.log("[HUD] submitScore fallback installed");
-        } else {
-          console.log("[HUD] submitScore exists from tg-bridge.js");
-        }
-      })();
+            var res = await fetch("/api/score", {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                "X-Telegram-Init-Data": ctx.init_data || ""
+              },
+              body: JSON.stringify(payload),
+              credentials: "include"
+            });
+            var txt = ""; try { txt = await res.text(); } catch(e){}
+            console.log("[HUD submitScore] status", res.status, txt);
+          }catch(e){
+            console.error("[HUD submitScore] error:", e);
+          }
+        };
+        var TG = window.Telegram && window.Telegram.WebApp ? window.Telegram.WebApp : null;
+        if (TG) { try { TG.ready(); } catch(e){} }
+        console.log("[HUD] submitScore fallback installed");
+      } else {
+        console.log("[HUD] submitScore exists from tg-bridge.js");
+      }
 
       // --- HUD ---
       var box=document.createElement("div");box.id="dbgHud";
@@ -159,14 +174,7 @@
       var b=document.createElement("button");b.textContent="DBG";b.style.cssText="padding:6px 10px;border-radius:6px;border:1px solid #333;background:#222;color:#fff;";
       b.onclick=function(){box.style.display=(box.style.display==="none"?"block":"none");sessionStorage.setItem("__DBG",box.style.display);};
       var s=document.createElement("button");s.textContent="send 123";s.style.cssText=b.style.cssText;
-      s.onclick=function(){
-        if(typeof window.submitScore==="function"){
-          window.submitScore(123);
-          log("submitScore(123) called");
-        } else {
-          log("submitScore not found");
-        }
-      };
+      s.onclick=function(){ if(typeof window.submitScore==="function"){ window.submitScore(123); log("submitScore(123) called"); } else { log("submitScore not found"); } };
       document.addEventListener("DOMContentLoaded",function(){bar.appendChild(b);bar.appendChild(s);document.body.appendChild(bar);});
       ["log","warn","error"].forEach(function(k){var o=console[k];console[k]=function(){try{log("console."+k+": "+Array.prototype.map.call(arguments,function(a){try{return typeof a==="string"?a:JSON.stringify(a);}catch(e){return String(a);}}).join(" "));}catch(e){}o.apply(console,arguments);};});
       if(window.fetch){var f=window.fetch.bind(window);window.fetch=async function(){var args=arguments;try{var url=String(args[0]);var r=await f.apply(null,args);if(url.indexOf("/api/score")!==-1){var c=r.clone();var t="";try{t=await c.text();}catch(e){}log("score -> status "+r.status+" body: "+(t||"<empty>"));}return r;}catch(e){log("fetch error: "+e);throw e;}};}
