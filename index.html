@@ -8,36 +8,41 @@
   <meta name="author" content="Okapi Team" />
   <meta name="description" content="KAPI RUN Game" />
 
-  <!-- Tam no-cache (yardımcı olur) -->
+  <!-- Sert no-cache -->
   <meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate, max-age=0" />
   <meta http-equiv="Pragma" content="no-cache" />
   <meta http-equiv="Expires" content="0" />
 
-  <!-- 🔥 Agresif temizlik: SW + Cache Storage + LocalStorage + IndexedDB (C3 kalıntıları) -->
+  <!-- SW + Cache + LS + IDB temizliği -->
   <script>
     (function () {
-      if ('serviceWorker' in navigator) {
-        navigator.serviceWorker.getRegistrations()
-          .then(list => list.forEach(r => r.unregister()))
-          .catch(()=>{});
-      }
-      if (window.caches && caches.keys) {
-        caches.keys().then(keys => Promise.all(keys.map(k => caches.delete(k)))).catch(()=>{});
-      }
       try {
-        Object.keys(localStorage)
-          .filter(k => /^c3|^C3|project|manifest/i.test(k))
-          .forEach(k => localStorage.removeItem(k));
+        if ('serviceWorker' in navigator) {
+          navigator.serviceWorker.getRegistrations()
+            .then(list => list.forEach(r => r.unregister()))
+            .catch(()=>{});
+        }
+        if (window.caches && caches.keys) {
+          caches.keys().then(keys => Promise.all(keys.map(k => caches.delete(k)))).catch(()=>{});
+        }
       } catch(e) {}
       try {
-        if (indexedDB && indexedDB.databases) {
-          indexedDB.databases().then(dbs => {
-            dbs.forEach(db => db && db.name && indexedDB.deleteDatabase(db.name));
-          }).catch(()=>{});
-        } else {
-          ["c3storage","offline","construct-cache","workbox-expiration"].forEach(n=>{
-            try { indexedDB.deleteDatabase(n); } catch(e){}
-          });
+        // C3 ve benzeri anahtarları temizle
+        Object.keys(localStorage || {}).forEach(k => {
+          if (/^(c3|C3|project|manifest)/.test(k)) localStorage.removeItem(k);
+        });
+      } catch(e) {}
+      try {
+        if (window.indexedDB) {
+          if (indexedDB.databases) {
+            indexedDB.databases()
+              .then(dbs => dbs.forEach(db => db && db.name && indexedDB.deleteDatabase(db.name)))
+              .catch(()=>{});
+          } else {
+            ["c3storage","offline","construct-cache","workbox-expiration"].forEach(n=>{
+              try { indexedDB.deleteDatabase(n); } catch(e){}
+            });
+          }
         }
       } catch(e) {}
     })();
@@ -75,13 +80,12 @@
   <!-- iOS Telegram siyah ekran fix -->
   <script>window.C3_NO_WORKER = true;</script>
 
-  <!-- 🔑 Construct proje verisi (data) için hard cache-bust -->
-  <!-- DİKKAT: Dosya adını kendi repo’ndaki yeni isminle aynı yap -->
+  <!-- Proje verisi (data) için hard cache-bust -->
   <script>
     window.C3_ProjectDataUrl = "data-kapi-20250917.json?v=20250917";
   </script>
 
-  <!-- Construct boot scripts: SIRALAMA ÖNEMLİ -->
+  <!-- Construct boot scripts (SIRALAMA ÖNEMLİ) -->
   <script src="./scripts/supportcheck.js?v=2" crossorigin="anonymous"></script>
   <script src="./scripts/modernjscheck.js?v=2" crossorigin="anonymous"></script>
   <script src="./scripts/c3runtime.js?v=20250917" crossorigin="anonymous"></script>
@@ -102,13 +106,13 @@
           body: JSON.stringify(data),
           credentials: "include"
         });
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        return res.json().catch(()=> ({}));
+        if (!res.ok) throw new Error("HTTP " + res.status);
+        try { return await res.json(); } catch { return {}; }
       }
       window.submitScore = async function(score, initData = "") {
         try {
           const payload = { score: Math.max(0, Math.floor(score)), init_data: initData };
-          await postJSON(`${BASE_URL}/api/score`, payload);
+          await postJSON(BASE_URL + "/api/score", payload);
           console.log("[KAPI RUN] Skor gönderildi:", payload.score);
         } catch (err) {
           console.error("[KAPI RUN] /api/score gönderilemedi:", err);
