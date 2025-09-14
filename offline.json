@@ -1,7 +1,6 @@
 ﻿{
-  "version": 20250914,
+  "version": 20250915,
   "fileList": [
-    "scripts/main.js",
     "scripts/c3main.js",
     "scripts/dispatchworker.js",
     "scripts/jobworker.js",
