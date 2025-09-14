@@ -83,7 +83,8 @@
   <!-- Proje verisi (data) için hard cache-bust -->
   <script>
     window.C3_ProjectDataUrl = "data-kapi-20250917.json?v=20250917";
-  </script>
+  window["C3_ProjectDataUrl"] = "data-kapi-20250917.json?v=20250917";
+</script>
 
   <!-- Construct boot scripts (SIRALAMA ÖNEMLİ) -->
   <script src="./scripts/supportcheck.js?v=2" crossorigin="anonymous"></script>
