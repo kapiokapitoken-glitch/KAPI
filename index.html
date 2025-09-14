@@ -1,59 +1,33 @@
 ﻿<!DOCTYPE html>
-<html lang="tr">
+<html>
 <head>
-  <meta charset="UTF-8" />
+  <meta charset="UTF-8">
   <title>KAPI RUN</title>
-  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,minimum-scale=1,user-scalable=no" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0, user-scalable=no">
 
-  <meta name="generator" content="Construct 3" />
-  <meta name="author" content="Okapi Team" />
-  <meta name="description" content="KAPI RUN Game" />
+  <meta name="generator" content="Construct 3">
+  <meta name="author" content="Okapi Team">
+  <meta name="description" content="KAPI RUN Game">
 
   <!-- Manifest & Icons -->
-  <link rel="manifest" href="./appmanifest.json?v=20250917m6" />
-  <link rel="apple-touch-icon" sizes="128x128" href="./icons/icon-128.png" />
-  <link rel="apple-touch-icon" sizes="256x256" href="./icons/icon-256.png" />
-  <link rel="icon" type="image/png" href="./icons/icon-256.png" />
+  <link rel="manifest" href="./appmanifest.json?v=20250917">
+  <link rel="apple-touch-icon" sizes="128x128" href="./icons/icon-128.png">
+  <link rel="apple-touch-icon" sizes="256x256" href="./icons/icon-256.png">
+  <link rel="icon" type="image/png" href="./icons/icon-256.png">
 
-  <link rel="stylesheet" href="./style.css?v=2" />
-
-  <!-- *** EN ÖNCE: C3 ayarları (senkron) *** -->
-  <script>
-    // Worker kullanma (mobil/webview uyumluluğu için)
-    window.C3_NO_WORKER = true;
-
-    // Proje verisi yolu — MODERN export da bunu okur
-    window.C3_ProjectDataUrl = "data.json?v=20250917m6";
-    window["C3_ProjectDataUrl"] = "data.json?v=20250917m6";
-  </script>
-
-  <!-- steğe bağlı: SW & Cache temizliği (senkron olmasına gerek yok) -->
-  <script>
-    (async () => {
-      try {
-        if ("serviceWorker" in navigator) {
-          const regs = await navigator.serviceWorker.getRegistrations();
-          await Promise.all(regs.map(r => r.unregister()));
-        }
-        if (window.caches?.keys) {
-          const ks = await caches.keys();
-          await Promise.all(ks.map(k => caches.delete(k)));
-        }
-      } catch (e) {}
-    })();
-  </script>
+  <link rel="stylesheet" href="./style.css?v=2">
 </head>
 <body>
   <div id="fb-root"></div>
 
   <noscript>
     <div id="notSupportedWrap">
-      <h2 id="notSupportedTitle">Bu içerik JavaScript gerektirir</h2>
-      <p class="notSupportedMessage">Lütfen JavaScript'i etkinleştirip sayfayı yenileyin.</p>
+      <h2 id="notSupportedTitle">This content requires JavaScript</h2>
+      <p class="notSupportedMessage">JavaScript appears to be disabled. Please enable it to view this content.</p>
     </div>
   </noscript>
 
-  <!-- iOS ses kilidi fix -->
+  <!-- iOS Audio unlock -->
   <script>
     document.addEventListener("touchstart", function () {
       try {
@@ -63,7 +37,27 @@
     }, { once: true });
   </script>
 
-  <!-- SADECE Modern boot -->
-  <script type="module" src="./scripts/main.js?v=20250917m6" crossorigin="anonymous"></script>
+  <!-- Cache temizliği (SW ve eski görselleri iptal et) -->
+  <script>
+    (function() {
+      if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.getRegistrations()
+          .then(list => list.forEach(r => r.unregister()))
+          .catch(()=>{});
+      }
+      if (window.caches && caches.keys) {
+        caches.keys().then(keys => Promise.all(keys.map(k => caches.delete(k)))).catch(()=>{});
+      }
+    })();
+  </script>
+
+  <!-- iOS Telegram siyah ekran fix -->
+  <script>window.C3_NO_WORKER = true;</script>
+
+  <!-- Classic export boot scripts -->
+  <script src="./scripts/supportcheck.js?v=2" crossorigin="anonymous"></script>
+  <script src="./scripts/modernjscheck.js?v=2" crossorigin="anonymous"></script>
+  <script src="./scripts/main.js?v=20250917" crossorigin="anonymous"></script>
+
 </body>
 </html>
