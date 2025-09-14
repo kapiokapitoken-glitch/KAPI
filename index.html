@@ -3,43 +3,31 @@
 <head>
   <meta charset="utf-8" />
   <title>KAPI RUN</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0, user-scalable=no" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
   <meta name="description" content="KAPI RUN Game" />
-  <meta name="generator" content="Construct 3" />
-
-  <!-- Manifest & Icons -->
+  <meta name="author" content="Okapi Team" />
   <link rel="manifest" href="./appmanifest.json?v=20250917z" />
   <link rel="apple-touch-icon" sizes="128x128" href="./icons/icon-128.png" />
   <link rel="apple-touch-icon" sizes="256x256" href="./icons/icon-256.png" />
   <link rel="icon" type="image/png" href="./icons/icon-256.png" />
-
   <link rel="stylesheet" href="./style.css?v=2" />
-  <style>
-    html,body{margin:0;height:100%;background:#000}
-    .c3htmlwrap{touch-action:none}
-  </style>
 </head>
 <body>
   <div id="fb-root"></div>
-
   <noscript>
     <div id="notSupportedWrap">
-      <h2>Bu içerik için JavaScript gerekli</h2>
-      <p>Lütfen tarayıcınızda JavaScript’i etkinleştirin.</p>
+      <h2>Bu içerik JavaScript gerektirir</h2>
+      <p class="notSupportedMessage">Devam etmek için JavaScript’i etkinleştirin.</p>
     </div>
   </noscript>
-
-  <!-- iOS ilk dokunuş ses kilidi açma -->
   <script>
-    addEventListener("touchstart", function () {
+    document.addEventListener("touchstart", function () {
       try {
         var Ctx = window.AudioContext || window.webkitAudioContext;
         if (Ctx) { var ctx = new Ctx(); if (ctx.state === "suspended" && ctx.resume) ctx.resume(); }
-      } catch (_) {}
+      } catch (e) {}
     }, { once: true });
   </script>
-
-  <!-- Service worker ve önbellek temizliği (garanti) -->
   <script>
     (function () {
       if ('serviceWorker' in navigator) {
@@ -52,31 +40,11 @@
       }
     })();
   </script>
-
-  <!-- ÖNEMLİ: Worker kullanma (bazı webview’larda sorun çıkarıyor) -->
   <script>window.C3_NO_WORKER = true;</script>
-
-  <!-- DATA URL’i (cache-bust ile) -->
   <script>
     window.C3_ProjectDataUrl = "data.json?v=20250917z";
     window["C3_ProjectDataUrl"] = "data.json?v=20250917z";
   </script>
-
-  <!-- DESTEK KONTROL dosyaları main.js’ten ÖNCE gelmeli -->
-  <script src="./scripts/supportcheck.js?v=2"></script>
-  <script src="./scripts/modernjscheck.js?v=2"></script>
-
-  <!-- Construct 3 ana başlatıcı (Web HTML5 export’unda main.js tek başına yeter) -->
-  <script type="module" src="./scripts/main.js?v=20250917z"></script>
-
-  <!-- Teşhis (isteğe bağlı) -->
-  <script>
-    // Konsolda hızlı teşhis için:
-    console.log("C3_IsSupported:", window.C3_IsSupported);
-    console.log("Data URL:", window.C3_ProjectDataUrl);
-    fetch(window.C3_ProjectDataUrl, {cache:"no-store"})
-      .then(r => console.log("DATA status:", r.status, r.url))
-      .catch(e => console.error("DATA fetch error:", e));
-  </script>
+  <script type="module" src="./scripts/main.js?v=20250917z" crossorigin="anonymous"></script>
 </body>
 </html>
