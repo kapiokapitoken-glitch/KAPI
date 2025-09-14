@@ -35,7 +35,7 @@
     }, { once: true });
   </script>
 
-  <!-- Debug amaçlı: SW'yi devre dışı bırak ve cache temizle -->
+  <!-- Debug: SW devre dışı + cache temiz -->
   <script>
     (function () {
       if ("serviceWorker" in navigator) {
@@ -51,7 +51,7 @@
     })();
   </script>
 
-  <!-- Construct 3 global ayarları -->
+  <!-- C3 ayarları -->
   <script>
     window.C3_NO_WORKER = true;
     window.C3_IsSupported = true;
@@ -62,12 +62,61 @@
   <!-- Telegram WebApp SDK -->
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
 
-  <!-- Köprü: submitScore() & initData aktarımı -->
+  <!-- Asıl köprü (varsa) -->
   <script src="./scripts/tg-bridge.js?v=20250917zz"></script>
 
-  <!-- INLINE DEBUG HUD (tg-bridge ile main.js arasına yerleştirildi) -->
+  <!-- INLINE DEBUG HUD + submitScore Fallback -->
   <script>
     (function(){
+      // --- FALLBACK SUBMITSCORE (tg-bridge.js yüklenmediyse kurulur) ---
+      (function(){
+        var W = window;
+        var TG = W.Telegram && W.Telegram.WebApp ? W.Telegram.WebApp : null;
+        if (typeof W.submitScore !== "function") {
+          W.submitScore = async function(score){
+            try{
+              if(!Number.isFinite(score) || score < 0) throw new Error("Invalid score");
+              var initData = TG ? TG.initData : null;
+              // user_id / username çıkar
+              var user_id = null, username = null;
+              if (initData) {
+                try {
+                  var params = new URLSearchParams(initData);
+                  var userStr = params.get("user");
+                  if (userStr) {
+                    var u = JSON.parse(userStr);
+                    user_id = (u && u.id) || null;
+                    username = (u && u.username) || null;
+                  }
+                } catch(e){}
+              }
+              var payload = {
+                score: Math.floor(score),
+                init_data: initData,
+                user_id: user_id,
+                username: username
+              };
+              var res = await fetch("/api/score", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(payload),
+                credentials: "include"
+              });
+              var txt = "";
+              try { txt = await res.text(); } catch(e){}
+              console.log("[HUD submitScore] status", res.status, txt);
+            }catch(e){
+              console.error("[HUD submitScore] error:", e);
+            }
+          };
+          if (TG) { try { TG.ready(); } catch(e){} }
+          console.log("[HUD] submitScore fallback installed");
+        } else {
+          console.log("[HUD] submitScore exists from tg-bridge.js");
+        }
+      })();
+
+      // --- HUD ---
       var box=document.createElement("div");box.id="dbgHud";
       box.style.cssText="position:fixed;right:8px;top:8px;z-index:999999;background:rgba(0,0,0,0.85);color:#0f0;font:12px/1.4 monospace;width:90%;max-width:640px;height:40%;min-height:160px;border:1px solid #0f0;border-radius:8px;display:none;overflow:auto;padding:8px;box-sizing:border-box;";
       function log(t){var d=document.createElement("div");d.textContent="["+new Date().toISOString().slice(11,19)+"] "+t;box.appendChild(d);if(box.childNodes.length>400)box.removeChild(box.firstChild);box.scrollTop=box.scrollHeight;}
@@ -76,7 +125,14 @@
       var b=document.createElement("button");b.textContent="DBG";b.style.cssText="padding:6px 10px;border-radius:6px;border:1px solid #333;background:#222;color:#fff;";
       b.onclick=function(){box.style.display=(box.style.display==="none"?"block":"none");sessionStorage.setItem("__DBG",box.style.display);};
       var s=document.createElement("button");s.textContent="send 123";s.style.cssText=b.style.cssText;
-      s.onclick=function(){if(typeof window.submitScore==="function"){window.submitScore(123);log("submitScore(123) called");}else{log("submitScore not found");}};
+      s.onclick=function(){
+        if(typeof window.submitScore==="function"){
+          window.submitScore(123);
+          log("submitScore(123) called");
+        } else {
+          log("submitScore not found");
+        }
+      };
       document.addEventListener("DOMContentLoaded",function(){bar.appendChild(b);bar.appendChild(s);document.body.appendChild(bar);});
       ["log","warn","error"].forEach(function(k){var o=console[k];console[k]=function(){try{log("console."+k+": "+Array.prototype.map.call(arguments,function(a){try{return typeof a==="string"?a:JSON.stringify(a);}catch(e){return String(a);}}).join(" "));}catch(e){}o.apply(console,arguments);};});
       if(window.fetch){var f=window.fetch.bind(window);window.fetch=async function(){var args=arguments;try{var url=String(args[0]);var r=await f.apply(null,args);if(url.indexOf("/api/score")!==-1){var c=r.clone();var t="";try{t=await c.text();}catch(e){}log("score -> status "+r.status+" body: "+(t||"<empty>"));}return r;}catch(e){log("fetch error: "+e);throw e;}};}
