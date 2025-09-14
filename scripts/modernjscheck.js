@@ -1,6 +1,1 @@
-/**
- * Stub: Modern JS check for Construct builds.
- * If this file is missing, Construct shows the "Software update needed" page.
- * Doing nothing here effectively passes the check.
- */
-(function(){ /* pass */ })();
+"use strict";!function(){let p=!0;"pass"!==(new class{#p="pass";getProp(){return this.#p}}).getProp()&&(p=!1),p&&(window["C3_ModernJSSupport_OK"]=!0)}();
