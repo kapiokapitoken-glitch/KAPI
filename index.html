@@ -10,7 +10,7 @@
   <meta name="description" content="KAPI RUN Game" />
 
   <!-- Manifest & Icons -->
-  <link rel="manifest" href="./appmanifest.json?v=20250917j" />
+  <link rel="manifest" href="./appmanifest.json?v=20250917m" />
   <link rel="apple-touch-icon" sizes="128x128" href="./icons/icon-128.png" />
   <link rel="apple-touch-icon" sizes="256x256" href="./icons/icon-256.png" />
   <link rel="icon" type="image/png" href="./icons/icon-256.png" />
@@ -37,7 +37,7 @@
     }, { once: true });
   </script>
 
-  <!-- Cache temizliği (SW ve eski görselleri iptal et) -->
+  <!-- Cache temizliği (varsa eski SW ve cache’leri iptal et) -->
   <script>
     (function() {
       if ('serviceWorker' in navigator) {
@@ -51,14 +51,16 @@
     })();
   </script>
 
-  <!-- iOS/Telegram webview uyumu: worker kapalı -->
+  <!-- Worker kapalı (Telegram/iOS uyumu) -->
   <script>window.C3_NO_WORKER = true;</script>
 
-  <!-- Construct boot scripts (EXPORT DÜZENİNE GÖRE) -->
-  <script src="./scripts/supportcheck.js?v=2" crossorigin="anonymous"></script>
-  <script src="./scripts/modernjscheck.js?v=2" crossorigin="anonymous"></script>
+  <!-- Construct proje verisi yolu -->
+  <script>
+    window.C3_ProjectDataUrl = "data.json?v=20250917m";
+  </script>
 
-  <!-- ÖNEMLİ: module main.js YOLU (c3runtime/c3main değil) -->
-  <script type="module" src="./scripts/main.js?v=20250917j" crossorigin="anonymous"></script>
+  <!-- DİKKAT: supportcheck/modernjscheck KALDIRILDI -->
+  <!-- Doğrudan module main.js ile boot -->
+  <script type="module" src="./scripts/main.js?v=20250917m" crossorigin="anonymous"></script>
 </body>
 </html>
