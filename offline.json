@@ -1,10 +1,10 @@
 ﻿{
-  "version": 20250916,
+  "version": 20250917,
   "fileList": [
     "scripts/c3main.js",
     "scripts/dispatchworker.js",
     "scripts/jobworker.js",
-    "data.json",
+    "data-kapi-20250917.json",
     "scripts/modernjscheck.js",
     "scripts/supportcheck.js",
     "scripts/offlineclient.js",
