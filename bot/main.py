@@ -281,6 +281,45 @@ def _check_webapp_initdata(init_data: str, bot_token: str) -> bool:
     Telegram WebApp initData doğrulaması:
     secret = HMAC_SHA256(key="WebAppData", msg=bot_token)
     calc   = HMAC_SHA256(key=secret, msg=data_check_string)
+    data_check_string = alfabetik sırada key=value, '\n' ile ( 'hash' ve 'signature' HARİÇ )
+    """
+    if not init_data or not bot_token:
+        return False
+
+    bot_token = bot_token.strip()
+    pairs: Dict[str, str] = {}
+    recv_hash: Optional[str] = None
+
+    # Querystring'i parçala
+    for kv in init_data.split("&"):
+        if not kv or "=" not in kv:
+            continue
+        k, v = kv.split("=", 1)
+        k = unquote_plus(k)
+        v = unquote_plus(v)
+        if k == "hash":
+            recv_hash = v
+        elif k == "signature":
+            # signature da data_check_string'e DAHİL EDİLMEZ
+            continue
+        else:
+            pairs[k] = v
+
+    if not recv_hash:
+        return False
+
+    # Alfabetik sırada key=value ve '\n' ile birleştir
+    data_check_string = "\n".join(f"{k}={pairs[k]}" for k in sorted(pairs.keys()))
+
+    # secret = HMAC_SHA256("WebAppData", bot_token)
+    secret = hmac.new(b"WebAppData", bot_token.encode("utf-8"), hashlib.sha256).digest()
+    calc   = hmac.new(secret, data_check_string.encode("utf-8"), hashlib.sha256).hexdigest()
+
+    return hmac.compare_digest(calc, recv_hash)
+
+    Telegram WebApp initData doğrulaması:
+    secret = HMAC_SHA256(key="WebAppData", msg=bot_token)
+    calc   = HMAC_SHA256(key=secret, msg=data_check_string)
     data_check_string = alfabetik sırada key=value ('hash' HARİÇ), '\n' ile birleştirilmiş
     """
     if not init_data or not bot_token:
