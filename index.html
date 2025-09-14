@@ -10,12 +10,38 @@
   <meta name="description" content="KAPI RUN Game" />
 
   <!-- Manifest & Icons -->
-  <link rel="manifest" href="./appmanifest.json?v=20250917m4" />
+  <link rel="manifest" href="./appmanifest.json?v=20250917m6" />
   <link rel="apple-touch-icon" sizes="128x128" href="./icons/icon-128.png" />
   <link rel="apple-touch-icon" sizes="256x256" href="./icons/icon-256.png" />
   <link rel="icon" type="image/png" href="./icons/icon-256.png" />
 
   <link rel="stylesheet" href="./style.css?v=2" />
+
+  <!-- *** EN ÖNCE: C3 ayarları (senkron) *** -->
+  <script>
+    // Worker kullanma (mobil/webview uyumluluğu için)
+    window.C3_NO_WORKER = true;
+
+    // Proje verisi yolu — MODERN export da bunu okur
+    window.C3_ProjectDataUrl = "data.json?v=20250917m6";
+    window["C3_ProjectDataUrl"] = "data.json?v=20250917m6";
+  </script>
+
+  <!-- steğe bağlı: SW & Cache temizliği (senkron olmasına gerek yok) -->
+  <script>
+    (async () => {
+      try {
+        if ("serviceWorker" in navigator) {
+          const regs = await navigator.serviceWorker.getRegistrations();
+          await Promise.all(regs.map(r => r.unregister()));
+        }
+        if (window.caches?.keys) {
+          const ks = await caches.keys();
+          await Promise.all(ks.map(k => caches.delete(k)));
+        }
+      } catch (e) {}
+    })();
+  </script>
 </head>
 <body>
   <div id="fb-root"></div>
@@ -37,29 +63,7 @@
     }, { once: true });
   </script>
 
-  <!-- SW & Cache temizliği -->
-  <script>
-    (async () => {
-      try {
-        if ('serviceWorker' in navigator) {
-          const regs = await navigator.serviceWorker.getRegistrations();
-          await Promise.all(regs.map(r => r.unregister()));
-        }
-        if (window.caches?.keys) {
-          const ks = await caches.keys();
-          await Promise.all(ks.map(k => caches.delete(k)));
-        }
-      } catch (e) {}
-      // Bazı ortamlar için worker kapalı
-      window.C3_NO_WORKER = true;
-
-      // Construct proje veri yolu (Modern export'ta da kullanılır)
-      window.C3_ProjectDataUrl = "data.json?v=20250917m4";
-      window["C3_ProjectDataUrl"] = "data.json?v=20250917m4";
-    })();
-  </script>
-
-  <!-- Construct 3 Modern boot: SADECE main.js -->
-  <script type="module" src="./scripts/main.js?v=20250917m4" crossorigin="anonymous"></script>
+  <!-- SADECE Modern boot -->
+  <script type="module" src="./scripts/main.js?v=20250917m6" crossorigin="anonymous"></script>
 </body>
 </html>
