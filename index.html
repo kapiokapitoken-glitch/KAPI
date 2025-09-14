@@ -1,48 +1,50 @@
-﻿<!DOCTYPE html>
-<html>
+﻿<!doctype html>
+<html lang="tr">
 <head>
-  <meta charset="UTF-8">
+  <meta charset="utf-8" />
   <title>KAPI RUN</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0, user-scalable=no">
-
-  <meta name="generator" content="Construct 3">
-  <meta name="author" content="Okapi Team">
-  <meta name="description" content="KAPI RUN Game">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0, user-scalable=no" />
+  <meta name="description" content="KAPI RUN Game" />
+  <meta name="generator" content="Construct 3" />
 
   <!-- Manifest & Icons -->
-  <link rel="manifest" href="./appmanifest.json?v=20250917">
-  <link rel="apple-touch-icon" sizes="128x128" href="./icons/icon-128.png">
-  <link rel="apple-touch-icon" sizes="256x256" href="./icons/icon-256.png">
-  <link rel="icon" type="image/png" href="./icons/icon-256.png">
+  <link rel="manifest" href="./appmanifest.json?v=20250917z" />
+  <link rel="apple-touch-icon" sizes="128x128" href="./icons/icon-128.png" />
+  <link rel="apple-touch-icon" sizes="256x256" href="./icons/icon-256.png" />
+  <link rel="icon" type="image/png" href="./icons/icon-256.png" />
 
-  <link rel="stylesheet" href="./style.css?v=2">
+  <link rel="stylesheet" href="./style.css?v=2" />
+  <style>
+    html,body{margin:0;height:100%;background:#000}
+    .c3htmlwrap{touch-action:none}
+  </style>
 </head>
 <body>
   <div id="fb-root"></div>
 
   <noscript>
     <div id="notSupportedWrap">
-      <h2 id="notSupportedTitle">This content requires JavaScript</h2>
-      <p class="notSupportedMessage">JavaScript appears to be disabled. Please enable it to view this content.</p>
+      <h2>Bu içerik için JavaScript gerekli</h2>
+      <p>Lütfen tarayıcınızda JavaScript’i etkinleştirin.</p>
     </div>
   </noscript>
 
-  <!-- iOS Audio unlock -->
+  <!-- iOS ilk dokunuş ses kilidi açma -->
   <script>
-    document.addEventListener("touchstart", function () {
+    addEventListener("touchstart", function () {
       try {
         var Ctx = window.AudioContext || window.webkitAudioContext;
         if (Ctx) { var ctx = new Ctx(); if (ctx.state === "suspended" && ctx.resume) ctx.resume(); }
-      } catch (e) {}
+      } catch (_) {}
     }, { once: true });
   </script>
 
-  <!-- Cache temizliği (SW ve eski görselleri iptal et) -->
+  <!-- Service worker ve önbellek temizliği (garanti) -->
   <script>
-    (function() {
+    (function () {
       if ('serviceWorker' in navigator) {
         navigator.serviceWorker.getRegistrations()
-          .then(list => list.forEach(r => r.unregister()))
+          .then(rs => rs.forEach(r => r.unregister()))
           .catch(()=>{});
       }
       if (window.caches && caches.keys) {
@@ -51,13 +53,30 @@
     })();
   </script>
 
-  <!-- iOS Telegram siyah ekran fix -->
+  <!-- ÖNEMLİ: Worker kullanma (bazı webview’larda sorun çıkarıyor) -->
   <script>window.C3_NO_WORKER = true;</script>
 
-  <!-- Classic export boot scripts -->
-  <script src="./scripts/supportcheck.js?v=2" crossorigin="anonymous"></script>
-  <script src="./scripts/modernjscheck.js?v=2" crossorigin="anonymous"></script>
-  <script src="./scripts/main.js?v=20250917" crossorigin="anonymous"></script>
+  <!-- DATA URL’i (cache-bust ile) -->
+  <script>
+    window.C3_ProjectDataUrl = "data.json?v=20250917z";
+    window["C3_ProjectDataUrl"] = "data.json?v=20250917z";
+  </script>
 
+  <!-- DESTEK KONTROL dosyaları main.js’ten ÖNCE gelmeli -->
+  <script src="./scripts/supportcheck.js?v=2"></script>
+  <script src="./scripts/modernjscheck.js?v=2"></script>
+
+  <!-- Construct 3 ana başlatıcı (Web HTML5 export’unda main.js tek başına yeter) -->
+  <script type="module" src="./scripts/main.js?v=20250917z"></script>
+
+  <!-- Teşhis (isteğe bağlı) -->
+  <script>
+    // Konsolda hızlı teşhis için:
+    console.log("C3_IsSupported:", window.C3_IsSupported);
+    console.log("Data URL:", window.C3_ProjectDataUrl);
+    fetch(window.C3_ProjectDataUrl, {cache:"no-store"})
+      .then(r => console.log("DATA status:", r.status, r.url))
+      .catch(e => console.error("DATA fetch error:", e));
+  </script>
 </body>
 </html>
