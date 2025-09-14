@@ -22,37 +22,26 @@
     </div>
   </noscript>
 
-  <!-- iOS: ilk dokunuşta AudioContext kilidini aç -->
   <script>
+    // iOS: ilk dokunuşta AudioContext kilidini aç
     document.addEventListener("touchstart", function () {
       try {
         var Ctx = window.AudioContext || window.webkitAudioContext;
-        if (Ctx) {
-          var ctx = new Ctx();
-          if (ctx.state === "suspended" && ctx.resume) ctx.resume();
-        }
+        if (Ctx) { var ctx = new Ctx(); if (ctx.state === "suspended" && ctx.resume) ctx.resume(); }
       } catch (e) {}
     }, { once: true });
-  </script>
 
-  <!-- Debug: SW devre dışı + cache temiz -->
-  <script>
+    // Debug: SW devre dışı + cache temiz
     (function () {
       if ("serviceWorker" in navigator) {
-        navigator.serviceWorker.getRegistrations()
-          .then(rs => rs.forEach(r => r.unregister()))
-          .catch(() => {});
+        navigator.serviceWorker.getRegistrations().then(rs => rs.forEach(r => r.unregister())).catch(() => {});
       }
       if (window.caches && caches.keys) {
-        caches.keys()
-          .then(keys => Promise.all(keys.map(k => caches.delete(k))))
-          .catch(() => {});
+        caches.keys().then(keys => Promise.all(keys.map(k => caches.delete(k)))).catch(() => {});
       }
     })();
-  </script>
 
-  <!-- C3 ayarları -->
-  <script>
+    // C3 ayarları
     window.C3_NO_WORKER = true;
     window.C3_IsSupported = true;
     window.C3_ProjectDataUrl = "data.json?v=20250917zz";
@@ -62,57 +51,108 @@
   <!-- Telegram WebApp SDK -->
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
 
-  <!-- Asıl köprü -->
+  <!-- Köprü -->
   <script src="./scripts/tg-bridge.js?v=20250917zz"></script>
 
-  <!-- INLINE DEBUG HUD + submitScore FALLBACK -->
+  <!-- INLINE DEBUG HUD + FALLBACK -->
   <script>
     (function(){
-      function parseInitData(){
-        var out = {
-          init_data:null, init_params:{}, user_json:null,
-          user_id:null, username:null, first_name:null, last_name:null,
-          query_id:null, chat_type:null, chat_instance:null,
-          start_param:null, can_send_after:null,
-          auth_date:null, hash:null, sig:null
-        };
-        var TG = window.Telegram && window.Telegram.WebApp ? window.Telegram.WebApp : null;
-        if (!TG || !TG.initData) return out;
-        var initData = TG.initData; out.init_data = initData;
-        try{
-          var params = new URLSearchParams(initData);
-          params.forEach(function(v,k){ out.init_params[k]=v; });
-          var userStr = params.get("user");
-          if (userStr) {
-            out.user_json = userStr;
-            try {
-              var u = JSON.parse(userStr);
-              out.user_id    = (u && u.id) || null;
-              out.username   = (u && u.username) || null;
-              out.first_name = (u && u.first_name) || null;
-              out.last_name  = (u && u.last_name)  || null;
-            } catch(e){}
-          }
-          out.query_id      = params.get("query_id");
-          out.chat_type     = params.get("chat_type");
-          out.chat_instance = params.get("chat_instance");
-          out.start_param   = params.get("start_param");
-          out.can_send_after = params.get("can_send_after");
-          var auth = params.get("auth_date");
-          out.auth_date = auth != null ? Number(auth) : null;
-          var hash = params.get("hash");
-          out.hash = hash;
-          out.sig  = hash;
-        }catch(e){}
-        return out;
-      }
+      function getUnsafe(){ var TG = window.Telegram && window.Telegram.WebApp ? window.Telegram.WebApp : null; return TG && TG.initDataUnsafe || null; }
+      function getInit(){  var TG = window.Telegram && window.Telegram.WebApp ? window.Telegram.WebApp : null; return TG && TG.initData || ""; }
 
-      // --- FALLBACK SUBMITSCORE (tg-bridge.js yüklenmediyse) ---
+      // Fallback submitScore (tg-bridge.js yoksa)
       if (typeof window.submitScore !== "function") {
         window.submitScore = async function(score){
           try{
             if(!Number.isFinite(score) || score < 0) throw new Error("Invalid score");
-            var ctx = parseInitData();
+
+            var unsafe = getUnsafe();
+            var initData = getInit();
+
+            // initData boşsa, tg-bridge.js ile aynı yöntemi uygula
+            function qsFromUnsafe(u){
+              if (!u) return "";
+              var pairs = [];
+              function push(k,v){ if(v!==undefined && v!==null && v!=="") pairs.push([k,String(v)]); }
+              push("auth_date", u.auth_date);
+              push("chat_instance", u.chat_instance);
+              push("chat_type", (u.chat && u.chat.type) || u.chat_type);
+              push("query_id", u.query_id);
+              push("start_param", u.start_param);
+              push("can_send_after", u.can_send_after);
+              if (u.user) { try { push("user", JSON.stringify(u.user)); } catch {} }
+              push("hash", u.hash);
+              pairs.sort((a,b)=>a[0].localeCompare(b[0]));
+              var usp = new URLSearchParams();
+              pairs.forEach(([k,v])=>usp.append(k,v));
+              return usp.toString();
+            }
+
+            var ctx = (function(){
+              var out = {
+                init_data: initData || "",
+                init_params: {},
+                user_json: null,
+                user_id: null, username: null, first_name: null, last_name: null,
+                query_id: null, chat_type: null, chat_instance: null,
+                start_param: null, can_send_after: null,
+                auth_date: null, hash: null, sig: null
+              };
+              if (initData) {
+                try{
+                  var p = new URLSearchParams(initData);
+                  p.forEach((v,k)=>out.init_params[k]=v);
+                  var userStr = p.get("user");
+                  if (userStr) {
+                    out.user_json = userStr;
+                    try{ var u = JSON.parse(userStr);
+                      out.user_id = u && u.id || null;
+                      out.username = u && u.username || null;
+                      out.first_name = u && u.first_name || null;
+                      out.last_name = u && u.last_name || null;
+                    }catch{}
+                  }
+                  out.query_id = p.get("query_id");
+                  out.chat_type = p.get("chat_type");
+                  out.chat_instance = p.get("chat_instance");
+                  out.start_param = p.get("start_param");
+                  out.can_send_after = p.get("can_send_after");
+                  var auth = p.get("auth_date");
+                  out.auth_date = auth!=null ? Number(auth) : null;
+                  out.hash = p.get("hash");
+                  out.sig  = out.hash;
+                }catch{}
+              } else if (unsafe) {
+                try{
+                  out.user_id = unsafe.user && unsafe.user.id || null;
+                  out.username = unsafe.user && unsafe.user.username || null;
+                  out.first_name = unsafe.user && unsafe.user.first_name || null;
+                  out.last_name  = unsafe.user && unsafe.user.last_name || null;
+                  out.user_json = unsafe.user ? JSON.stringify(unsafe.user) : null;
+                  out.query_id = unsafe.query_id || null;
+                  out.chat_type = (unsafe.chat && unsafe.chat.type) || unsafe.chat_type || null;
+                  out.chat_instance = unsafe.chat_instance || null;
+                  out.start_param = unsafe.start_param || null;
+                  out.can_send_after = unsafe.can_send_after || null;
+                  out.auth_date = unsafe.auth_date != null ? Number(unsafe.auth_date) : null;
+                  out.hash = unsafe.hash || null;
+                  out.sig  = out.hash;
+                  var tmp = {};
+                  if (out.user_json) tmp.user = out.user_json;
+                  if (out.query_id) tmp.query_id = out.query_id;
+                  if (out.chat_type) tmp.chat_type = out.chat_type;
+                  if (out.chat_instance) tmp.chat_instance = out.chat_instance;
+                  if (out.start_param) tmp.start_param = out.start_param;
+                  if (out.can_send_after) tmp.can_send_after = out.can_send_after;
+                  if (out.auth_date != null) tmp.auth_date = String(out.auth_date);
+                  if (out.hash) tmp.hash = out.hash;
+                  out.init_params = tmp;
+                  out.init_data = qsFromUnsafe(unsafe);
+                }catch{}
+              }
+              return out;
+            })();
+
             var payload = {
               score: Math.floor(score),
               ts: Date.now(),
@@ -170,12 +210,22 @@
       box.style.cssText="position:fixed;right:8px;top:8px;z-index:999999;background:rgba(0,0,0,0.85);color:#0f0;font:12px/1.4 monospace;width:90%;max-width:640px;height:40%;min-height:160px;border:1px solid #0f0;border-radius:8px;display:none;overflow:auto;padding:8px;box-sizing:border-box;";
       function log(t){var d=document.createElement("div");d.textContent="["+new Date().toISOString().slice(11,19)+"] "+t;box.appendChild(d);if(box.childNodes.length>400)box.removeChild(box.firstChild);box.scrollTop=box.scrollHeight;}
       document.addEventListener("DOMContentLoaded",function(){document.body.appendChild(box);});
+
       var bar=document.createElement("div");bar.style.cssText="position:fixed;right:8px;top:8px;z-index:1000000;display:flex;gap:6px;";
-      var b=document.createElement("button");b.textContent="DBG";b.style.cssText="padding:6px 10px;border-radius:6px;border:1px solid #333;background:#222;color:#fff;";
-      b.onclick=function(){box.style.display=(box.style.display==="none"?"block":"none");sessionStorage.setItem("__DBG",box.style.display);};
-      var s=document.createElement("button");s.textContent="send 123";s.style.cssText=b.style.cssText;
-      s.onclick=function(){ if(typeof window.submitScore==="function"){ window.submitScore(123); log("submitScore(123) called"); } else { log("submitScore not found"); } };
-      document.addEventListener("DOMContentLoaded",function(){bar.appendChild(b);bar.appendChild(s);document.body.appendChild(bar);});
+      function mkbtn(label, onclick){var x=document.createElement("button");x.textContent=label;x.style.cssText="padding:6px 10px;border-radius:6px;border:1px solid #333;background:#222;color:#fff;";x.onclick=onclick;return x;}
+      var b=mkbtn("DBG", function(){box.style.display=(box.style.display==="none"?"block":"none");sessionStorage.setItem("__DBG",box.style.display);});
+      var s=mkbtn("send 123", function(){ if(typeof window.submitScore==="function"){ window.submitScore(123); log("submitScore(123) called"); } else { log("submitScore not found"); } });
+      var c=mkbtn("CTX", function(){
+        try{
+          var TG = window.Telegram && window.Telegram.WebApp ? window.Telegram.WebApp : null;
+          var unsafe = TG && TG.initDataUnsafe;
+          var initData = TG && TG.initData;
+          log("CTX: init_len=" + (initData?initData.length:0) + ", hasUnsafe=" + (!!unsafe) +
+              ", user=" + (unsafe && unsafe.user ? (unsafe.user.username || unsafe.user.id) : "null"));
+        }catch(e){ log("CTX error: " + e); }
+      });
+      document.addEventListener("DOMContentLoaded",function(){bar.appendChild(b);bar.appendChild(s);bar.appendChild(c);document.body.appendChild(bar);});
+
       ["log","warn","error"].forEach(function(k){var o=console[k];console[k]=function(){try{log("console."+k+": "+Array.prototype.map.call(arguments,function(a){try{return typeof a==="string"?a:JSON.stringify(a);}catch(e){return String(a);}}).join(" "));}catch(e){}o.apply(console,arguments);};});
       if(window.fetch){var f=window.fetch.bind(window);window.fetch=async function(){var args=arguments;try{var url=String(args[0]);var r=await f.apply(null,args);if(url.indexOf("/api/score")!==-1){var c=r.clone();var t="";try{t=await c.text();}catch(e){}log("score -> status "+r.status+" body: "+(t||"<empty>"));}return r;}catch(e){log("fetch error: "+e);throw e;}};}
       if(location.hash.indexOf("debug")!==-1||sessionStorage.getItem("__DBG")==="block"){box.style.display="block";}
