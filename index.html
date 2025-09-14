@@ -1,21 +1,56 @@
 <!DOCTYPE html>
-<html>
+<html lang="tr">
 <head>
-  <meta charset="UTF-8">
+  <meta charset="UTF-8" />
   <title>KAPI RUN</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0, user-scalable=no">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0, user-scalable=no" />
+  <meta name="generator" content="Construct 3" />
+  <meta name="author" content="Okapi Team" />
+  <meta name="description" content="KAPI RUN Game" />
 
-  <meta name="generator" content="Construct 3">
-  <meta name="author" content="Okapi Team">
-  <meta name="description" content="KAPI RUN Game">
+  <!-- Tam no-cache (yardımcı olur) -->
+  <meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate, max-age=0" />
+  <meta http-equiv="Pragma" content="no-cache" />
+  <meta http-equiv="Expires" content="0" />
+
+  <!-- 🔥 Agresif temizlik: SW + Cache Storage + LocalStorage + IndexedDB (C3 kalıntıları) -->
+  <script>
+    (function () {
+      if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.getRegistrations()
+          .then(list => list.forEach(r => r.unregister()))
+          .catch(()=>{});
+      }
+      if (window.caches && caches.keys) {
+        caches.keys().then(keys => Promise.all(keys.map(k => caches.delete(k)))).catch(()=>{});
+      }
+      try {
+        Object.keys(localStorage)
+          .filter(k => /^c3|^C3|project|manifest/i.test(k))
+          .forEach(k => localStorage.removeItem(k));
+      } catch(e) {}
+      try {
+        if (indexedDB && indexedDB.databases) {
+          indexedDB.databases().then(dbs => {
+            dbs.forEach(db => db && db.name && indexedDB.deleteDatabase(db.name));
+          }).catch(()=>{});
+        } else {
+          ["c3storage","offline","construct-cache","workbox-expiration"].forEach(n=>{
+            try { indexedDB.deleteDatabase(n); } catch(e){}
+          });
+        }
+      } catch(e) {}
+    })();
+  </script>
 
   <!-- Manifest & Icons -->
-  <link rel="manifest" href="./appmanifest.json?v=20250916"> <!-- cache-bust eklendi -->
-  <link rel="apple-touch-icon" sizes="128x128" href="./icons/icon-128.png">
-  <link rel="apple-touch-icon" sizes="256x256" href="./icons/icon-256.png">
-  <link rel="icon" type="image/png" href="./icons/icon-256.png">
+  <link rel="manifest" href="./appmanifest.json?v=20250917" />
+  <link rel="apple-touch-icon" sizes="128x128" href="./icons/icon-128.png" />
+  <link rel="apple-touch-icon" sizes="256x256" href="./icons/icon-256.png" />
+  <link rel="icon" type="image/png" href="./icons/icon-256.png" />
 
-  <link rel="stylesheet" href="./style.css?v=2">
+  <!-- Stil -->
+  <link rel="stylesheet" href="./style.css?v=2" />
 </head>
 <body>
   <div id="fb-root"></div>
@@ -37,37 +72,22 @@
     }, { once: true });
   </script>
 
-  <!-- Cache temizliği (SW ve eski görselleri iptal et) -->
-  <script>
-    (function() {
-      if ('serviceWorker' in navigator) {
-        navigator.serviceWorker.getRegistrations()
-          .then(list => list.forEach(r => r.unregister()))
-          .catch(()=>{});
-      }
-      if (window.caches && caches.keys) {
-        caches.keys().then(keys => Promise.all(keys.map(k => caches.delete(k)))).catch(()=>{});
-      }
-    })();
-  </script>
-
   <!-- iOS Telegram siyah ekran fix -->
   <script>window.C3_NO_WORKER = true;</script>
 
-  <!-- Construct data dosyasına cache-bust -->
+  <!-- 🔑 Construct proje verisi (data) için hard cache-bust -->
+  <!-- DİKKAT: Dosya adını kendi repo’ndaki yeni isminle aynı yap -->
   <script>
     window.C3_ProjectDataUrl = "data-kapi-20250917.json?v=20250917";
   </script>
 
-  <!-- Construct boot scripts -->
+  <!-- Construct boot scripts: SIRALAMA ÖNEMLİ -->
   <script src="./scripts/supportcheck.js?v=2" crossorigin="anonymous"></script>
   <script src="./scripts/modernjscheck.js?v=2" crossorigin="anonymous"></script>
+  <script src="./scripts/c3runtime.js?v=20250917" crossorigin="anonymous"></script>
+  <script src="./scripts/c3main.js?v=20250917" crossorigin="anonymous"></script>
 
-  <!-- DOĞRUSU: c3runtime + c3main (main.js DEĞİL!) -->
-  <script src="./scripts/c3runtime.js?v=20250916" crossorigin="anonymous"></script>
-  <script src="./scripts/c3main.js?v=20250916" crossorigin="anonymous"></script>
-
-  <!-- offlineclient/register-sw kapalı kalsın -->
+  <!-- offlineclient/register-sw kesinlikle yüklenmesin -->
   <!-- <script type="module" src="./scripts/offlineclient.js"></script> -->
   <!-- <script type="module" src="./scripts/register-sw.js"></script> -->
 
@@ -83,7 +103,7 @@
           credentials: "include"
         });
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        return res.json();
+        return res.json().catch(()=> ({}));
       }
       window.submitScore = async function(score, initData = "") {
         try {
@@ -95,7 +115,7 @@
         }
       };
       if (window.Telegram && Telegram.WebApp) {
-        Telegram.WebApp.ready();
+        try { Telegram.WebApp.ready(); } catch(e) {}
       }
     })();
   </script>
