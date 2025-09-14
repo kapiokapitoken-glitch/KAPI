@@ -10,7 +10,7 @@
   <meta name="description" content="KAPI RUN Game">
 
   <!-- Manifest & Icons -->
-  <link rel="manifest" href="./appmanifest.json">
+  <link rel="manifest" href="./appmanifest.json?v=20250916"> <!-- cache-bust eklendi -->
   <link rel="apple-touch-icon" sizes="128x128" href="./icons/icon-128.png">
   <link rel="apple-touch-icon" sizes="256x256" href="./icons/icon-256.png">
   <link rel="icon" type="image/png" href="./icons/icon-256.png">
@@ -54,13 +54,50 @@
   <!-- iOS Telegram siyah ekran fix -->
   <script>window.C3_NO_WORKER = true;</script>
 
+  <!-- Construct data dosyasına cache-bust -->
+  <script>
+    window.C3_ProjectDataUrl = "data.json?v=20250916";
+  </script>
+
   <!-- Construct boot scripts -->
   <script src="./scripts/supportcheck.js?v=2" crossorigin="anonymous"></script>
   <script src="./scripts/modernjscheck.js?v=2" crossorigin="anonymous"></script>
-  <!-- offlineclient/register-sw kapalı bırakıyoruz -->
+
+  <!-- DOĞRUSU: c3runtime + c3main (main.js DEĞİL!) -->
+  <script src="./scripts/c3runtime.js?v=20250916" crossorigin="anonymous"></script>
+  <script src="./scripts/c3main.js?v=20250916" crossorigin="anonymous"></script>
+
+  <!-- offlineclient/register-sw kapalı kalsın -->
   <!-- <script type="module" src="./scripts/offlineclient.js"></script> -->
   <!-- <script type="module" src="./scripts/register-sw.js"></script> -->
 
-  <script type="module" src="./scripts/main.js?v=2" crossorigin="anonymous"></script>
+  <!-- Skor gönderme köprüsü -->
+  <script>
+    (function () {
+      const BASE_URL = location.origin;
+      async function postJSON(url, data) {
+        const res = await fetch(url, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(data),
+          credentials: "include"
+        });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        return res.json();
+      }
+      window.submitScore = async function(score, initData = "") {
+        try {
+          const payload = { score: Math.max(0, Math.floor(score)), init_data: initData };
+          await postJSON(`${BASE_URL}/api/score`, payload);
+          console.log("[KAPI RUN] Skor gönderildi:", payload.score);
+        } catch (err) {
+          console.error("[KAPI RUN] /api/score gönderilemedi:", err);
+        }
+      };
+      if (window.Telegram && Telegram.WebApp) {
+        Telegram.WebApp.ready();
+      }
+    })();
+  </script>
 </body>
 </html>
