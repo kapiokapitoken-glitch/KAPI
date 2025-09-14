@@ -20,6 +20,8 @@
       <p class="notSupportedMessage">Devam etmek için JavaScript’i etkinleþtirin.</p>
     </div>
   </noscript>
+
+  <!-- iOS ses kilidi çözümü -->
   <script>
     document.addEventListener("touchstart", function () {
       try {
@@ -28,6 +30,8 @@
       } catch (e) {}
     }, { once: true });
   </script>
+
+  <!-- SW ve cache'i kapat (debug için) -->
   <script>
     (function () {
       if ('serviceWorker' in navigator) {
@@ -40,13 +44,22 @@
       }
     })();
   </script>
+
+  <!-- C3 ayarlarý -->
   <script>window.C3_NO_WORKER = true;</script>
   <script>
     window.C3_ProjectDataUrl = "data.json?v=20250917zz";
     window["C3_ProjectDataUrl"] = "data.json?v=20250917zz";
   </script>
-<script>window.C3_IsSupported = true; window.C3_NO_WORKER = true;</script>
+  <script>window.C3_IsSupported = true; window.C3_NO_WORKER = true;</script>
+
+  <!-- Telegram WebApp SDK (Telegram içinde otomatik de gelir; dahil etmek zararsýzdýr) -->
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+
+  <!-- KÖPRÜ: C3 çalýþmadan önce global submitScore() tanýmlansýn -->
+  <script src="./scripts/tg-bridge.js?v=20250917zz"></script>
+
+  <!-- C3 loader -->
   <script type="module" src="./scripts/main.js?v=20250917zz" crossorigin="anonymous"></script>
 </body>
 </html>
-
