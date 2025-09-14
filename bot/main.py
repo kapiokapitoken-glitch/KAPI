@@ -7,10 +7,9 @@ import hashlib
 from typing import Any, Dict, Optional
 
 import time
-from urllib.parse import urlencode
+from urllib.parse import urlencode, parse_qs, unquote_plus  # + parse helpers
 
-
-from fastapi import FastAPI, Request, HTTPException, status
+from fastapi import FastAPI, Request, HTTPException, status, Header  # + Header
 from fastapi.responses import JSONResponse, FileResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -26,7 +25,7 @@ from telegram.ext import Application, CommandHandler, ContextTypes
 # =========================
 TELEGRAM_BOT_TOKEN = os.environ["TELEGRAM_BOT_TOKEN"]
 DATABASE_URL = (os.environ.get("DATABASE_URL") or "").strip()
-SECRET = (os.environ.get("SECRET") or "").strip()
+SECRET = (os.environ.get("SECRET") or "").strip()  # legacy HMAC fallback
 PUBLIC_GAME_URL = (os.environ.get("PUBLIC_GAME_URL") or "/").strip()
 GAME_SHORT_NAME = (os.environ.get("GAME_SHORT_NAME") or "kapi_run").strip()
 
@@ -208,15 +207,12 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = update.message or update.effective_message
     if not msg:
         return
-
-        # Telegram cache-bust için URL’ye ?v=timestamp parametresi ekle
+    # Telegram cache-bust için URL’ye ?v=timestamp parametresi ekle
     v = str(int(time.time()))
     sep = "&" if "?" in PUBLIC_GAME_URL else "?"
     url = f"{PUBLIC_GAME_URL}{sep}v={v}"
-
     kb = [[InlineKeyboardButton("Play the Game", url=url)]]
     await msg.reply_text("Welcome to KAPI RUN!", reply_markup=InlineKeyboardMarkup(kb))
-
 
 async def cmd_top(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = update.message or update.effective_message
@@ -268,38 +264,128 @@ async def telegram_webhook(request: Request):
     return {"ok": True}
 
 # =========================
-# SCORE API
+# SIGNATURE HELPERS
 # =========================
 def _hmac_ok(user_id: int, score: int, sig: str) -> bool:
+    """
+    Legacy imza (client->server SECRET HMAC) fallback.
+    """
     if not SECRET:
         return False
     msg = f"{user_id}:{score}".encode("utf-8")
     expected = hmac.new(SECRET.encode("utf-8"), msg, hashlib.sha256).hexdigest()
     return hmac.compare_digest(expected, sig)
 
+def _check_webapp_initdata(init_data: str, bot_token: str) -> bool:
+    """
+    Telegram WebApp initData doğrulaması:
+    secret = HMAC_SHA256(key="WebAppData", msg=bot_token)
+    calc   = HMAC_SHA256(key=secret, msg=data_check_string)
+    data_check_string = alfabetik sırada key=value ('hash' HARİÇ), '\n' ile birleştirilmiş
+    """
+    if not init_data or not bot_token:
+        return False
+
+    # Querystring'i parçala
+    pairs: Dict[str, str] = {}
+    recv_hash: Optional[str] = None
+    for kv in init_data.split("&"):
+        if not kv or "=" not in kv:
+            continue
+        k, v = kv.split("=", 1)
+        k = unquote_plus(k)
+        v = unquote_plus(v)
+        if k == "hash":
+            recv_hash = v
+        else:
+            pairs[k] = v
+
+    if not recv_hash:
+        return False
+
+    data_check_string = "\n".join(f"{k}={pairs[k]}" for k in sorted(pairs.keys()))
+    secret = hmac.new(b"WebAppData", TELEGRAM_BOT_TOKEN.encode("utf-8"), hashlib.sha256).digest()
+    calc   = hmac.new(secret, data_check_string.encode("utf-8"), hashlib.sha256).hexdigest()
+    return hmac.compare_digest(calc, recv_hash)
+
+# =========================
+# SCORE API
+# =========================
 @app.post("/api/score")
-async def post_score(payload: Dict[str, Any]):
-    for k in ("user_id", "username", "score", "sig"):
-        if k not in payload:
-            raise HTTPException(status_code=400, detail=f"missing field: {k}")
-    user_id = int(payload["user_id"])
-    username = _fmt_user(str(payload["username"] or ""), user_id)
-    score = int(payload["score"])
-    sig = str(payload["sig"])
-    if not _hmac_ok(user_id, score, sig):
+async def post_score(
+    request: Request,
+    x_telegram_init_data: Optional[str] = Header(default=None)
+):
+    """
+    Skor kaydı:
+      - Öncelik: Telegram WebApp initData imzası (header: X-Telegram-Init-Data veya body.init_data)
+      - Fallback: Legacy SECRET HMAC (user_id:score -> sig)
+    """
+    # Body'yi güvenle al
+    try:
+        body = await request.json()
+        if not isinstance(body, dict):
+            body = {}
+    except Exception:
+        body = {}
+
+    # Skor
+    try:
+        score_val = int(body.get("score", 0))
+    except Exception:
+        score_val = 0
+    score_val = max(0, score_val)
+
+    # 1) WebApp initData doğrulaması
+    init_data = (x_telegram_init_data or body.get("init_data") or "").strip()
+    user_id: Optional[int] = None
+    username: Optional[str] = None
+
+    if init_data and _check_webapp_initdata(init_data, TELEGRAM_BOT_TOKEN):
+        # init_data içinden kullanıcıyı çıkar
+        params = parse_qs(init_data, keep_blank_values=True)
+        user_json = params.get("user", [None])[0]
+        if user_json:
+            try:
+                u = json.loads(user_json)
+                user_id = int(u.get("id"))
+                username = _fmt_user(u.get("username") or "", user_id)
+            except Exception:
+                pass
+    else:
+        # 2) Legacy HMAC fallback (eski client'lar için)
+        if all(k in body for k in ("user_id", "score", "sig")):
+            try:
+                uid = int(body.get("user_id"))
+                sig = str(body.get("sig") or "")
+                if _hmac_ok(uid, score_val, sig):
+                    user_id = uid
+                    username = _fmt_user(str(body.get("username") or ""), user_id)
+            except Exception:
+                pass
+
+    if user_id is None:
+        # Ne WebApp imzası geçti ne de legacy imza
         raise HTTPException(status_code=401, detail="invalid signature")
+
     if engine is None:
         raise HTTPException(status_code=500, detail="database not configured")
+
+    # DB upsert
     async with engine.begin() as conn:
-        await conn.execute(text("""
-            INSERT INTO scores (user_id, username, best_score)
-            VALUES (:uid, :uname, :s)
-            ON CONFLICT (user_id) DO UPDATE
-            SET username   = EXCLUDED.username,
-                best_score = GREATEST(scores.best_score, EXCLUDED.best_score),
-                updated_at = now();
-        """), {"uid": user_id, "uname": username, "s": score})
-    return {"ok": True, "saved": True}
+        await conn.execute(
+            text("""
+                INSERT INTO scores (user_id, username, best_score)
+                VALUES (:uid, :uname, :s)
+                ON CONFLICT (user_id) DO UPDATE
+                SET username   = EXCLUDED.username,
+                    best_score = GREATEST(scores.best_score, EXCLUDED.best_score),
+                    updated_at = now();
+            """),
+            {"uid": user_id, "uname": username, "s": score_val}
+        )
+
+    return {"ok": True, "saved": True, "user_id": user_id, "username": username, "score": score_val}
 
 @app.get("/api/leaderboard")
 async def leaderboard(limit: int = 200):
