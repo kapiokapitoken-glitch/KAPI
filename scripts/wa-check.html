@@ -16,6 +16,7 @@ pre{background:#111;color:#0f0;padding:10px;overflow:auto}
 <h2>Telegram WebApp Self-Test (/scripts/wa-check.html)</h2>
 <div id="env"></div>
 <div>
+  <button id="btnInit">INIT</button>
   <button id="btnCopy">Copy initData</button>
   <button id="btnSend">Send 123</button>
   <button id="btnProbe">Probe C3 assets</button>
@@ -34,6 +35,8 @@ pre{background:#111;color:#0f0;padding:10px;overflow:auto}
   const log = (...a)=>{ logEl.textContent += a.join(' ')+'\\n'; logEl.scrollTop = logEl.scrollHeight; };
 
   const TG = window.Telegram && window.Telegram.WebApp ? window.Telegram.WebApp : null;
+  if (TG) { try { TG.ready(); } catch(e) { log('ready() err',e) } } // <-- EKLENDI
+
   const isTG = !!TG, platform = isTG?TG.platform:'n/a', version=isTG?TG.version:'n/a';
 
   function qsFromUnsafe(u){
@@ -43,7 +46,9 @@ pre{background:#111;color:#0f0;padding:10px;overflow:auto}
     push("chat_type",(u.chat&&u.chat.type)||u.chat_type); push("query_id",u.query_id);
     push("start_param",u.start_param); push("can_send_after",u.can_send_after);
     if(u.user){ try{ push("user", JSON.stringify(u.user)); }catch(e){} }
-    push("hash",u.hash); pairs.sort((a,b)=>a[0].localeCompare(b[0]));
+    // hem hash hem de signature gelebilir; hash'i dahil ediyoruz
+    push("hash",u.hash);
+    pairs.sort((a,b)=>a[0].localeCompare(b[0]));
     const usp=new URLSearchParams(); pairs.forEach(([k,v])=>usp.append(k,v));
     return usp.toString();
   }
@@ -52,21 +57,39 @@ pre{background:#111;color:#0f0;padding:10px;overflow:auto}
     'Telegram.WebApp: ' + (isTG?'<span class="ok">PRESENT</span>':'<span class="bad">ABSENT</span>')+
     ' | platform: <b>'+platform+'</b> | version: <b>'+version+'</b>';
 
-  let init=""; let unsafe=null;
-  try{ unsafe=isTG?TG.initDataUnsafe:null; init=(isTG && TG.initData) || qsFromUnsafe(unsafe) || ""; }catch(e){ log('ERR initData:',e); }
-  const ta=document.getElementById('ta'); ta.value=init;
+  const ta=document.getElementById('ta');
 
-  // parsed
-  try{
-    const p=new URLSearchParams(init); const obj={};
-    for(const [k,v] of p.entries()) obj[k]=v;
-    if(obj.user){ try{ obj.user=JSON.parse(obj.user); }catch(e){} }
-    document.getElementById('parsed').textContent=JSON.stringify(obj,null,2);
-  }catch(e){ document.getElementById('parsed').textContent=String(e); }
+  function readInit(){
+    let init = "";
+    let unsafe = null;
+    try{
+      unsafe = isTG ? TG.initDataUnsafe : null;
+      init = (isTG && TG.initData) || qsFromUnsafe(unsafe) || "";
+    }catch(e){
+      log('ERR initData:',e);
+    }
+    ta.value = init;
+    // parsed
+    try{
+      const p=new URLSearchParams(init); const obj={};
+      for(const [k,v] of p.entries()) obj[k]=v;
+      if(obj.user){ try{ obj.user=JSON.parse(obj.user); }catch(e){} }
+      document.getElementById('parsed').textContent=JSON.stringify(obj,null,2);
+    }catch(e){ document.getElementById('parsed').textContent=String(e); }
+    log('INIT len=', (init||"").length, ' hasHash=', /(^|&)hash=/.test(init||""));
+  }
+
+  // sayfa yüklenince oku + kisa gecikmeyle tekrar dene
+  readInit();
+  setTimeout(readInit, 150); // <-- EKLENDI
+
+  document.getElementById('btnInit').onclick = readInit;
 
   document.getElementById('btnCopy').onclick = async ()=>{
-    try{ await navigator.clipboard.writeText(ta.value||""); log('Copied initData len=',(ta.value||"").length,' hasHash=',/(^|&)hash=/.test(ta.value||"")); }
-    catch(e){ log('Clipboard error:',e); }
+    try{
+      await navigator.clipboard.writeText(ta.value||"");
+      log('Copied initData len=',(ta.value||"").length,' hasHash=',/(^|&)hash=/.test(ta.value||""));
+    }catch(e){ log('Clipboard error:',e); }
   };
 
   document.getElementById('btnSend').onclick = async ()=>{
@@ -77,30 +100,30 @@ pre{background:#111;color:#0f0;padding:10px;overflow:auto}
       const userStr=params.get('user');
       if(userStr){ try{ const u=JSON.parse(userStr); user_id=u&&u.id||null; username=u&&u.username||null; }catch(e){} }
       auth_date=params.get('auth_date'); hash=params.get('hash');
+      const payload = { score:123, user_id, username, sig_len:(hash?hash.length:0), init_len:initData.length };
+      log('POST /api/score payload:', JSON.stringify(payload));
 
-      const payload={ score:123, user_id, username, auth_date: auth_date?Number(auth_date):null, sig: hash, init_data: initData };
-
-      log('POST /api/score payload:', JSON.stringify({ score:123, user_id, username, sig_len: hash?hash.length:0, init_len: (initData||'').length }));
       const res = await fetch('/api/score', {
         method:'POST',
         headers:{ 'Content-Type':'application/json', 'X-Telegram-Init-Data': initData },
-        body: JSON.stringify(payload),
-        credentials: 'include'
+        body: JSON.stringify({ score: 123, init_data: initData }),
+        credentials:'include'
       });
-      const txt = await res.text().catch(()=> '');
+      const txt = await res.text();
       log('RESP', res.status, txt);
-    }catch(e){ log('Send error:',e); }
+    }catch(e){ log('SEND err', e); }
   };
 
   document.getElementById('btnProbe').onclick = async ()=>{
-    for(const u of ['./scripts/main.js?v=20250917zz','./data.json?v=20250917zz']){
+    async function probe(u){
       try{
-        const r=await fetch(u,{cache:'no-store'}); log('PROBE',u,'->',r.status);
-      }catch(e){ log('PROBE ERR',u,e); }
+        const r = await fetch(u, { cache:'no-store' });
+        log('PROBE', u, '->', r.status);
+      }catch(e){ log('PROBE', u, 'err', e); }
     }
+    await probe('./scripts/main.js?v=20250917zz');
+    await probe('./data.json?v=20250917zz');
   };
-
-  if(isTG){ try{ TG.ready(); }catch(e){} }
 })();
 </script>
 </body>
