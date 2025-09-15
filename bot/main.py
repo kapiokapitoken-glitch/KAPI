@@ -4,12 +4,11 @@ import sys
 import json
 import hmac
 import hashlib
-from typing import Any, Dict, Optional
-
 import time
-from urllib.parse import urlencode, parse_qs, unquote_plus  # + parse helpers
+from typing import Any, Dict, Optional
+from urllib.parse import urlencode, parse_qs, unquote_plus
 
-from fastapi import FastAPI, Request, HTTPException, status, Header  # + Header
+from fastapi import FastAPI, Request, HTTPException, status, Header
 from fastapi.responses import JSONResponse, FileResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -23,9 +22,9 @@ from telegram.ext import Application, CommandHandler, ContextTypes
 # =========================
 # ENV
 # =========================
-TELEGRAM_BOT_TOKEN = os.environ["TELEGRAM_BOT_TOKEN"]
+TELEGRAM_BOT_TOKEN = os.environ["TELEGRAM_BOT_TOKEN"]  # BotFather token (env zorunlu)
 DATABASE_URL = (os.environ.get("DATABASE_URL") or "").strip()
-SECRET = (os.environ.get("SECRET") or "").strip()  # legacy HMAC fallback
+SECRET = (os.environ.get("SECRET") or "").strip()  # (opsiyonel) legacy HMAC fallback için
 PUBLIC_GAME_URL = (os.environ.get("PUBLIC_GAME_URL") or "/").strip()
 GAME_SHORT_NAME = (os.environ.get("GAME_SHORT_NAME") or "kapi_run").strip()
 
@@ -281,7 +280,8 @@ def _check_webapp_initdata(init_data: str, bot_token: str) -> bool:
     Telegram WebApp initData doğrulaması:
     secret = HMAC_SHA256(key="WebAppData", msg=bot_token)
     calc   = HMAC_SHA256(key=secret, msg=data_check_string)
-    data_check_string = alfabetik sırada key=value, '\n' ile ( 'hash' ve 'signature' HARİÇ )
+    data_check_string: 'hash' ve 'signature' HARIC tum key=value ciftlerinin
+    alfabetik siralanip '\\n' ile birlestirilmis hali.
     """
     if not init_data or not bot_token:
         return False
@@ -290,9 +290,9 @@ def _check_webapp_initdata(init_data: str, bot_token: str) -> bool:
     pairs: Dict[str, str] = {}
     recv_hash: Optional[str] = None
 
-    # Querystring'i parçala
+    # Querystring'i parcala
     for kv in init_data.split("&"):
-        if not kv or "=" not in kv:
+        if (not kv) or ("=" not in kv):
             continue
         k, v = kv.split("=", 1)
         k = unquote_plus(k)
@@ -300,7 +300,7 @@ def _check_webapp_initdata(init_data: str, bot_token: str) -> bool:
         if k == "hash":
             recv_hash = v
         elif k == "signature":
-            # signature da data_check_string'e DAHİL EDİLMEZ
+            # 'signature' data_check_string'e DAHIL EDILMEZ
             continue
         else:
             pairs[k] = v
@@ -308,43 +308,14 @@ def _check_webapp_initdata(init_data: str, bot_token: str) -> bool:
     if not recv_hash:
         return False
 
-    # Alfabetik sırada key=value ve '\n' ile birleştir
-    data_check_string = "\n".join(f"{k}={pairs[k]}" for k in sorted(pairs.keys()))
+    # Alfabetik sira
+    keys = sorted(pairs.keys())
+    data_check_string = "\n".join(["%s=%s" % (k, pairs[k]) for k in keys])
 
-    # secret = HMAC_SHA256("WebAppData", bot_token)
+    # secret ve hesaplanan hash
     secret = hmac.new(b"WebAppData", bot_token.encode("utf-8"), hashlib.sha256).digest()
-    calc   = hmac.new(secret, data_check_string.encode("utf-8"), hashlib.sha256).hexdigest()
+    calc = hmac.new(secret, data_check_string.encode("utf-8"), hashlib.sha256).hexdigest()
 
-    return hmac.compare_digest(calc, recv_hash)
-
-    Telegram WebApp initData doğrulaması:
-    secret = HMAC_SHA256(key="WebAppData", msg=bot_token)
-    calc   = HMAC_SHA256(key=secret, msg=data_check_string)
-    data_check_string = alfabetik sırada key=value ('hash' HARİÇ), '\n' ile birleştirilmiş
-    """
-    if not init_data or not bot_token:
-        return False
-
-    # Querystring'i parçala
-    pairs: Dict[str, str] = {}
-    recv_hash: Optional[str] = None
-    for kv in init_data.split("&"):
-        if not kv or "=" not in kv:
-            continue
-        k, v = kv.split("=", 1)
-        k = unquote_plus(k)
-        v = unquote_plus(v)
-        if k == "hash":
-            recv_hash = v
-        else:
-            pairs[k] = v
-
-    if not recv_hash:
-        return False
-
-    data_check_string = "\n".join(f"{k}={pairs[k]}" for k in sorted(pairs.keys()))
-    secret = hmac.new(b"WebAppData", TELEGRAM_BOT_TOKEN.encode("utf-8"), hashlib.sha256).digest()
-    calc   = hmac.new(secret, data_check_string.encode("utf-8"), hashlib.sha256).hexdigest()
     return hmac.compare_digest(calc, recv_hash)
 
 # =========================
