@@ -22,26 +22,7 @@
     async function probe(u){ try{ var r=await fetch(u,{cache:"no-store"}); log("PROBE", u, "->", r.status); }catch(e){ log("PROBE", u, "ERR", e); } }
     await probe("/scripts/main.js"); await probe("/data.json");
   });
-  var bAssets = btn("probe assets", async function(){
-    try{
-      var r = await fetch("/data.json?ts="+Date.now(), {cache:"no-store"});
-      var j = await r.json();
-      var list = j.fileList || j["file-list"] || j.filelist || j.files || [];
-      log("ASSETS count=", list.length);
-      var sample = list.slice(0, 30);
-      for (var i=0;i<sample.length;i++){
-        var p = sample[i];
-        var u = (p[0]==="/" ? p : "/"+p) + (p.indexOf("?")>-1 ? "&" : "?") + "ts="+Date.now();
-        try{
-          var rr = await fetch(u, {cache:"no-store"});
-          log("ASSET", i+1, "/", sample.length, u, "->", rr.status);
-        }catch(e){
-          log("ASSET ERR", i+1, "/", sample.length, u, e && (e.message||e));
-        }
-      }
-    }catch(e){ log("ASSETS ERR", e && (e.message||e)); }
-  });
-  document.addEventListener("DOMContentLoaded",function(){ bar.appendChild(bDbg); bar.appendChild(b123); bar.appendChild(bProbe); bar.appendChild(bAssets); document.body.appendChild(bar); });
+  document.addEventListener("DOMContentLoaded",function(){ bar.appendChild(bDbg); bar.appendChild(b123); bar.appendChild(bProbe); document.body.appendChild(bar); });
 
   // Console & error hooks
   ["log","warn","error"].forEach(function(k){ var o=console[k]; console[k]=function(){ try{ log("console."+k+":", ...arguments); }catch(e){} o.apply(console,arguments); }; });
@@ -50,7 +31,7 @@
     var r=e && (e.reason||{}); try{ log("unhandledrejection:", (r&&r.message)||r, (r&&r.stack)||""); }catch(_){ log("unhandledrejection:", r); }
   });
 
-  // Tüm fetch'leri logla (url, status, süre)
+  // Tüm fetch'leri logla
   if (window.fetch){
     var _f = window.fetch.bind(window);
     window.fetch = async function(input, init){
@@ -69,7 +50,33 @@
     };
   }
 
-  // lk boot’ta kritik çekirdekleri ölç
+  // *** C3 Runtime Name Hook: invalid prop reference hangi isim? ***
+  function patchGetJsPropName(){
+    try{
+      var R = (window.Eb && window.Eb.Runtime) ? window.Eb.Runtime : null;
+      if (!R || typeof R.GetJsPropName !== "function" || R.__patchedNameHook) return;
+      var orig = R.GetJsPropName;
+      R.GetJsPropName = function(name){
+        try{
+          if (typeof name === "string" && !/^[A-Za-z_][A-Za-z0-9_]*$/.test(name)) {
+            console.warn("[C3 BAD NAME]", name);
+          }
+        }catch(e){}
+        try{
+          return orig.apply(this, arguments);
+        }catch(err){
+          try{ console.error("[C3 GetJsPropName EX]", err && err.message || err, "name=", name); }catch(_){}
+          throw err;
+        }
+      };
+      R.__patchedNameHook = true;
+      console.log("[HUD] Patched Eb.Runtime.GetJsPropName");
+    }catch(e){ /* sessiz */ }
+  }
+  var _int = setInterval(patchGetJsPropName, 200);
+  setTimeout(function(){ clearInterval(_int); }, 15000);
+
+  // lk boot probeleri
   (async function boot(){
     log("BOOT: start");
     try{ var r1=await fetch("/scripts/main.js",{cache:"no-store"}); log("BOOT main.js ->", r1.status); }catch(e){ log("BOOT main.js ERR",e); }
