@@ -1,211 +1,66 @@
-﻿<!-- INLINE DEBUG HUD v2 (INIT + CTX + unsafe fallback) -->
-<script>
-(function(){
-  'use strict';
-  try {
-    // ---- Helpers ----
-    function getTG(){ return (window.Telegram && window.Telegram.WebApp) ? window.Telegram.WebApp : null; }
-    function getUnsafe(){ var TG = getTG(); return TG && TG.initDataUnsafe || null; }
-    function getInit(){  var TG = getTG(); return TG && TG.initData || ""; }
+﻿<!doctype html>
+<html lang="tr">
+<head>
+  <meta charset="utf-8" />
+  <title>KAPI RUN</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+  <meta name="description" content="KAPI RUN Game" />
+  <meta name="author" content="Okapi Team" />
+  <link rel="manifest" href="./appmanifest.json" />
+  <link rel="apple-touch-icon" sizes="128x128" href="./icons/icon-128.png" />
+  <link rel="apple-touch-icon" sizes="256x256" href="./icons/icon-256.png" />
+  <link rel="icon" type="image/png" href="./icons/icon-256.png" />
+  <link rel="stylesheet" href="./style.css" />
+</head>
+<body>
+  <div id="fb-root"></div>
 
-    // initDataUnsafe -> kanonik querystring (hash DAHİL)
-    function qsFromUnsafe(u){
-      if (!u) return "";
-      var pairs = [];
-      function push(k,v){ if(v!==undefined && v!==null && v!=="") pairs.push([k,String(v)]); }
-      push("auth_date", u.auth_date);
-      push("chat_instance", u.chat_instance);
-      push("chat_type", (u.chat && u.chat.type) || u.chat_type);
-      push("query_id", u.query_id);
-      push("start_param", u.start_param);
-      push("can_send_after", u.can_send_after);
-      if (u.user) { try { push("user", JSON.stringify(u.user)); } catch {} }
-      push("hash", u.hash);
-      pairs.sort((a,b)=>a[0].localeCompare(b[0]));
-      var usp = new URLSearchParams();
-      pairs.forEach(([k,v])=>usp.append(k,v));
-      return usp.toString();
-    }
+  <noscript>
+    <div id="notSupportedWrap">
+      <h2>Bu içerik JavaScript gerektirir</h2>
+      <p class="notSupportedMessage">Devam etmek için JavaScript’i etkinleştirin.</p>
+    </div>
+  </noscript>
 
-    // initData/Unsafe'tan bağlam çıkar
-    function buildCtx(){
-      var initData = getInit();
-      var unsafe = getUnsafe();
-      var out = {
-        init_data: initData || "",
-        init_params: {},
-        user_json: null,
-        user_id: null, username: null, first_name: null, last_name: null,
-        query_id: null, chat_type: null, chat_instance: null,
-        start_param: null, can_send_after: null,
-        auth_date: null, hash: null, sig: null
-      };
+  <!-- iOS ses kilidi çözümü -->
+  <script>
+    document.addEventListener("touchstart", function () {
+      try {
+        var Ctx = window.AudioContext || window.webkitAudioContext;
+        if (Ctx) { var ctx = new Ctx(); if (ctx.state === "suspended" && ctx.resume) ctx.resume(); }
+      } catch (e) {}
+    }, { once: true });
+  </script>
 
-      if (initData) {
-        try {
-          var p = new URLSearchParams(initData);
-          p.forEach((v,k)=>out.init_params[k]=v);
-          var userStr = p.get("user");
-          if (userStr) {
-            out.user_json = userStr;
-            try {
-              var u = JSON.parse(userStr);
-              out.user_id    = u && u.id || null;
-              out.username   = u && u.username || null;
-              out.first_name = u && u.first_name || null;
-              out.last_name  = u && u.last_name  || null;
-            } catch {}
-          }
-          out.query_id = p.get("query_id");
-          out.chat_type = p.get("chat_type");
-          out.chat_instance = p.get("chat_instance");
-          out.start_param = p.get("start_param");
-          out.can_send_after = p.get("can_send_after");
-          var auth = p.get("auth_date");
-          out.auth_date = auth!=null ? Number(auth) : null;
-          out.hash = p.get("hash");
-          out.sig  = out.hash;
-        } catch {}
-        return out;
+  <!-- SW ve cache'i kapat (debug için) -->
+  <script>
+    (function () {
+      if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.getRegistrations()
+          .then(rs => rs.forEach(r => r.unregister()))
+          .catch(()=>{});
       }
-
-      if (unsafe) {
-        try {
-          out.user_id    = unsafe.user && unsafe.user.id || null;
-          out.username   = unsafe.user && unsafe.user.username || null;
-          out.first_name = unsafe.user && unsafe.user.first_name || null;
-          out.last_name  = unsafe.user && unsafe.user.last_name  || null;
-          out.user_json  = unsafe.user ? JSON.stringify(unsafe.user) : null;
-
-          out.query_id      = unsafe.query_id || null;
-          out.chat_type     = (unsafe.chat && unsafe.chat.type) || unsafe.chat_type || null;
-          out.chat_instance = unsafe.chat_instance || null;
-          out.start_param   = unsafe.start_param || null;
-          out.can_send_after= unsafe.can_send_after || null;
-          out.auth_date     = unsafe.auth_date != null ? Number(unsafe.auth_date) : null;
-          out.hash          = unsafe.hash || null;
-          out.sig           = out.hash;
-
-          var tmp = {};
-          if (out.user_json) tmp.user = out.user_json;
-          if (out.query_id) tmp.query_id = out.query_id;
-          if (out.chat_type) tmp.chat_type = out.chat_type;
-          if (out.chat_instance) tmp.chat_instance = out.chat_instance;
-          if (out.start_param) tmp.start_param = out.start_param;
-          if (out.can_send_after) tmp.can_send_after = out.can_send_after;
-          if (out.auth_date != null) tmp.auth_date = String(out.auth_date);
-          if (out.hash) tmp.hash = out.hash;
-          out.init_params = tmp;
-
-          out.init_data = qsFromUnsafe(unsafe);
-        } catch {}
+      if (window.caches && caches.keys) {
+        caches.keys().then(keys => Promise.all(keys.map(k => caches.delete(k)))).catch(()=>{});
       }
-      return out;
-    }
+    })();
+  </script>
 
-    // ---- Fallback submitScore (tg-bridge.js yüklenmediyse) ----
-    if (typeof window.submitScore !== "function") {
-      window.submitScore = async function(score){
-        try{
-          if(!Number.isFinite(score) || score < 0) throw new Error("Invalid score");
-          var ctx = buildCtx();
-          var payload = {
-            score: Math.floor(score),
-            ts: Date.now(),
-            user_id: ctx.user_id,
-            username: ctx.username,
-            first_name: ctx.first_name,
-            last_name: ctx.last_name,
-            init_data: ctx.init_data,
-            init_params: ctx.init_params,
-            user: ctx.user_json,
-            hash: ctx.hash,
-            sig: ctx.sig,
-            auth_date: ctx.auth_date,
-            query_id: ctx.query_id,
-            chat_type: ctx.chat_type,
-            chat_instance: ctx.chat_instance,
-            start_param: ctx.start_param,
-            can_send_after: ctx.can_send_after,
-            href: (typeof location!=="undefined" && location.href) || null
-          };
+  <!-- C3 ayarları (versiyon parametresi YOK; 404 riskini kaldırır) -->
+  <script>
+    window.C3_NO_WORKER = true;
+    window.C3_IsSupported = true;
+    window.C3_ProjectDataUrl = "data.json";
+    window["C3_ProjectDataUrl"] = "data.json";
+  </script>
 
-          console.log("[HUD] payload", {
-            score: payload.score,
-            user_id: payload.user_id,
-            username: payload.username,
-            sig_len: payload.sig ? payload.sig.length : 0,
-            auth_date: payload.auth_date,
-            init_len: payload.init_data ? payload.init_data.length : 0
-          });
+  <!-- Telegram WebApp SDK -->
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
 
-          var res = await fetch("/api/score", {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              "X-Telegram-Init-Data": ctx.init_data || ""
-            },
-            body: JSON.stringify(payload),
-            credentials: "include"
-          });
-          var txt = ""; try { txt = await res.text(); } catch(e){}
-          console.log("[HUD submitScore] status", res.status, txt);
-        }catch(e){
-          console.error("[HUD submitScore] error:", e);
-        }
-      };
-      var TG = getTG(); if (TG) { try { TG.ready(); } catch(e){} }
-      console.log("[HUD] submitScore fallback installed");
-    } else {
-      console.log("[HUD] submitScore exists from tg-bridge.js");
-    }
+  <!-- Köprü (submitScore tanımı burada) -->
+  <script src="./scripts/tg-bridge.js"></script>
 
-    // ---- HUD UI ----
-    var box=document.createElement("div");box.id="dbgHud";
-    box.style.cssText="position:fixed;right:8px;top:8px;z-index:999999;background:rgba(0,0,0,0.85);color:#0f0;font:12px/1.4 monospace;width:90%;max-width:640px;height:40%;min-height:160px;border:1px solid #0f0;border-radius:8px;display:none;overflow:auto;padding:8px;box-sizing:border-box;";
-    function log(t){var d=document.createElement("div");d.textContent="["+new Date().toISOString().slice(11,19)+"] "+t;box.appendChild(d);if(box.childNodes.length>400)box.removeChild(box.firstChild);box.scrollTop=box.scrollHeight;}
-    document.addEventListener("DOMContentLoaded",function(){document.body.appendChild(box);});
-
-    var bar=document.createElement("div");bar.style.cssText="position:fixed;right:8px;top:8px;z-index:1000000;display:flex;gap:6px;";
-    function mkbtn(label, onclick){var x=document.createElement("button");x.textContent=label;x.style.cssText="padding:6px 10px;border-radius:6px;border:1px solid #333;background:#222;color:#fff;";x.onclick=onclick;return x;}
-
-    var b=mkbtn("DBG", function(){box.style.display=(box.style.display==="none"?"block":"none");sessionStorage.setItem("__DBG",box.style.display);});
-    var s=mkbtn("send 123", function(){ if(typeof window.submitScore==="function"){ window.submitScore(123); log("submitScore(123) called"); } else { log("submitScore not found"); } });
-    var c=mkbtn("CTX", function(){
-      try{
-        var TG = getTG(), unsafe = getUnsafe(), initData = getInit();
-        log("CTX: init_len=" + (initData?initData.length:0) + ", hasUnsafe=" + (!!unsafe) +
-            ", user=" + (unsafe && unsafe.user ? (unsafe.user.username || unsafe.user.id) : "null"));
-      }catch(e){ log("CTX error: " + e); }
-    });
-    var i=mkbtn("INIT", async function(){
-      try{
-        var TG = getTG();
-        var raw = (TG && TG.initData) || qsFromUnsafe(TG && TG.initDataUnsafe) || "";
-        if(navigator.clipboard && navigator.clipboard.writeText){
-          await navigator.clipboard.writeText(raw);
-          console.log("[HUD] initData copied, len=", raw.length, "hasHash=", /(?:^|&)hash=/.test(raw));
-        } else {
-          prompt("Copy initData:", raw);
-        }
-      }catch(e){ console.error("copy initData failed:", e); }
-    });
-
-    document.addEventListener("DOMContentLoaded",function(){
-      bar.appendChild(b); bar.appendChild(s); bar.appendChild(c); bar.appendChild(i);
-      document.body.appendChild(bar);
-    });
-
-    // Console & fetch logları
-    ["log","warn","error"].forEach(function(k){var o=console[k];console[k]=function(){try{log("console."+k+": "+Array.prototype.map.call(arguments,function(a){try{return typeof a==="string"?a:JSON.stringify(a);}catch(e){return String(a);}}).join(" "));}catch(e){}o.apply(console,arguments);};});
-    if(window.fetch){var f=window.fetch.bind(window);window.fetch=async function(){var args=arguments;try{var url=String(args[0]);var r=await f.apply(null,args);if(url.indexOf("/api/score")!==-1){var c=r.clone();var t="";try{t=await c.text();}catch(e){}log("score -> status "+r.status+" body: "+(t||"<empty>"));}return r;}catch(e){log("fetch error: "+e);throw e;}};}
-    if(location.hash.indexOf("debug")!==-1||sessionStorage.getItem("__DBG")==="block"){box.style.display="block";}
-  } catch(err) {
-    // Sert düşüşte görünür uyarı
-    var errDiv=document.createElement('div');
-    errDiv.style.cssText='position:fixed;top:0;left:0;right:0;background:#b00;color:#fff;font:12px monospace;padding:6px;z-index:1000001';
-    errDiv.textContent='HUD error: '+(err&&err.message?err.message:err);
-    document.addEventListener('DOMContentLoaded', function(){ document.body.appendChild(errDiv); });
-  }
-})();
-</script>
+  <!-- C3 loader -->
+  <script type="module" src="./scripts/main.js" crossorigin="anonymous"></script>
+</body>
+</html>
