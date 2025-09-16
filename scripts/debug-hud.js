@@ -31,7 +31,7 @@
     var r=e && (e.reason||{}); try{ log("unhandledrejection:", (r&&r.message)||r, (r&&r.stack)||""); }catch(_){ log("unhandledrejection:", r); }
   });
 
-  // Tüm fetch'leri logla
+  // Bütün fetch’leri logla
   if (window.fetch){
     var _f = window.fetch.bind(window);
     window.fetch = async function(input, init){
@@ -50,31 +50,54 @@
     };
   }
 
-  // *** C3 Runtime Name Hook: invalid prop reference hangi isim? ***
-  function patchGetJsPropName(){
-    try{
-      var R = (window.Eb && window.Eb.Runtime) ? window.Eb.Runtime : null;
-      if (!R || typeof R.GetJsPropName !== "function" || R.__patchedNameHook) return;
-      var orig = R.GetJsPropName;
-      R.GetJsPropName = function(name){
-        try{
-          if (typeof name === "string" && !/^[A-Za-z_][A-Za-z0-9_]*$/.test(name)) {
-            console.warn("[C3 BAD NAME]", name);
-          }
-        }catch(e){}
-        try{
-          return orig.apply(this, arguments);
-        }catch(err){
-          try{ console.error("[C3 GetJsPropName EX]", err && err.message || err, "name=", name); }catch(_){}
-          throw err;
+  // === C3 Runtime Name Sanitizer Patch ===
+  (function installNamePatch(){
+    var reserved = new Set(["break","case","catch","class","const","continue","debugger","default","delete","do","else","export","extends","finally","for","function","if","import","in","instanceof","new","return","super","switch","this","throw","try","typeof","var","void","while","with","yield","let","enum","await","implements","package","protected","interface","private","public","static"]);
+    function foldTr(s){
+      if(!s) return s;
+      return s.replace(/[şŞğıçÇöÖüÜ]/g, function(ch){
+        return ({'ş':'s','Ş':'S','ğ':'g','':'G','ı':'i','':'I','ç':'c','Ç':'C','ö':'o','Ö':'O','ü':'u','Ü':'U'})[ch] || ch;
+      });
+    }
+    function sanitize(name){
+      var orig = String(name==null?"":name);
+      var x = foldTr(orig);
+      x = x.replace(/[^\x00-\x7F]/g, "_");          // ASCII dışı -> _
+      x = x.replace(/[^A-Za-z0-9_]/g, "_");          // geçersiz -> _
+      if (!/^[A-Za-z_]/.test(x)) x = "_"+x;          // başta harf/_ şart
+      x = x.replace(/_+/g, "_").replace(/^_+$/,"_v");// stabilize
+      if (reserved.has(x)) x = "_"+x;                // rezerve kelime
+      if (x !== orig) console.warn("[C3 NAME SANITIZED]", orig, "=>", x);
+      return x;
+    }
+    function tryPatch(){
+      try{
+        if(!(window.Eb && window.Eb.Runtime)) return false;
+        var R = window.Eb.Runtime;
+        var patched = 0;
+
+        // prototype üzerinde varsa onu patchle
+        if (R.prototype && typeof R.prototype.GetJsPropName === "function" && !R.prototype.__patched_sanitize__) {
+          var o = R.prototype.GetJsPropName;
+          R.prototype.GetJsPropName = function(name){ return sanitize(name); };
+          R.prototype.__patched_sanitize__ = true;
+          patched++;
         }
-      };
-      R.__patchedNameHook = true;
-      console.log("[HUD] Patched Eb.Runtime.GetJsPropName");
-    }catch(e){ /* sessiz */ }
-  }
-  var _int = setInterval(patchGetJsPropName, 200);
-  setTimeout(function(){ clearInterval(_int); }, 15000);
+        // sınıf üstünde de varsa onu patchle (bazı build'lerde static olabilir)
+        if (typeof R.GetJsPropName === "function" && !R.__patched_sanitize__) {
+          var o2 = R.GetJsPropName;
+          R.GetJsPropName = function(name){ return sanitize(name); };
+          R.__patched_sanitize__ = true;
+          patched++;
+        }
+        if (patched>0){ console.log("[HUD] GetJsPropName patched x"+patched); return true; }
+      }catch(e){}
+      return false;
+    }
+    var n=0, timer=setInterval(function(){
+      if (tryPatch() || ++n>100){ clearInterval(timer); }
+    }, 100);
+  })();
 
   // lk boot probeleri
   (async function boot(){
