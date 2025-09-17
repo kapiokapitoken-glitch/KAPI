@@ -1,0 +1,50 @@
+﻿<!doctype html><meta charset="utf-8"><title>C3 Var Scan</title>
+<style>body{font:14px system-ui;margin:16px} code{background:#111;color:#0f0;padding:2px 6px;border-radius:4px}
+table{border-collapse:collapse;margin-top:10px} td,th{border:1px solid #ccc;padding:6px 8px}</style>
+<h2>Construct 3 – Değişken/Tanım Tarayıcı</h2>
+<p><button id="run">Tara</button> <span id="status"></span></p>
+<table id="tbl" style="display:none"><thead><tr><th>#</th><th>Ad</th><th>Neden şüpheli?</th></tr></thead><tbody></tbody></table>
+<script>
+(async function(){
+  const st = s=>document.getElementById('status').textContent=s;
+  const tbl=document.getElementById('tbl'), tb=tbl.querySelector('tbody');
+  const RESERVED=new Set('break,case,catch,class,const,continue,debugger,default,delete,do,else,export,extends,finally,for,function,if,import,in,instanceof,new,return,super,switch,this,throw,try,typeof,var,void,while,with,yield,let,enum,await,implements,package,protected,interface,private,public,static'.split(','));
+  function walk(x,acc){ if(!x) return;
+    if(Array.isArray(x)){x.forEach(v=>walk(v,acc));return}
+    if(typeof x==='object'){for(const k in x){ if(!Object.prototype.hasOwnProperty.call(x,k))continue;
+      const v=x[k]; if(typeof v==='string'){ if(k==='n'||k==='name'||k==='id'||k==='param'||k==='p'||k==='vname') acc.push(v); }
+      walk(v,acc);
+    } return}
+  }
+  async function run(){
+    try{
+      st('indiriliyor…');
+      const res = await fetch('/data.json?ts='+Date.now()); const txt=await res.text();
+      st('parse ediliyor…');
+      const obj=JSON.parse(txt);
+      const raw=[], bad=[], seen=new Set();
+      walk(obj,raw);
+      const rxBadStart=/^[^A-Za-z_]/, rxBadChars=/[^A-Za-z0-9_]/, rxTR=/[ğüşöçıÜŞÖÇ]/i;
+      raw.forEach(s=>{
+        if(typeof s!=='string') return;
+        const t=s.trim(); if(!t || t.length>48) return; // çok uzun metinler muhtemelen açıklama/metin
+        let why='';
+        if(rxTR.test(t))          why+='TR ';
+        if(rxBadStart.test(t))    why+='başlangıç ';
+        if(rxBadChars.test(t))    why+='karakter ';
+        if(RESERVED.has(t))       why+='rezerve ';
+        if(why && !seen.has(t)){ seen.add(t); bad.push({name:t, why:why.trim()}); }
+      });
+      bad.sort((a,b)=>a.name.localeCompare(b.name));
+      tb.innerHTML=''; bad.forEach((x,i)=>{
+        const tr=document.createElement('tr');
+        tr.innerHTML='<td>'+(i+1)+'</td><td><code>'+x.name.replace(/</g,'&lt;')+'</code></td><td>'+x.why+'</td>';
+        tb.appendChild(tr);
+      });
+      tbl.style.display='table';
+      st(bad.length? ('Şüpheli adet: '+bad.length) : 'Şüpheli ad bulunamadı 👍');
+    }catch(e){ st('Hata: '+e); }
+  }
+  document.getElementById('run').onclick=run;
+})();
+</script>
