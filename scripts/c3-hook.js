@@ -1,52 +1,53 @@
 ﻿(function(){
-  function hook(){
+  // Güvenli log helper
+  function safeLog(){ try{ console.log.apply(console, arguments); }catch(_){} }
+  function safeErr(){ try{ console.error.apply(console, arguments); }catch(_){} }
+
+  function hookOnce(){
     try{
       var Eb = window.Eb;
-      if (!Eb || !Eb.Runtime || !Eb.Runtime.prototype) return false;
+      if (!Eb || !Eb.Runtime) return false;
 
-      var R = Eb.Runtime.prototype;
-
-      // 1) GetJsPropName kancası: hatalı ismi ve argümanları logla
-      if (typeof R.GetJsPropName === "function" && !R.__getJsPropNameHooked){
-        var orig = R.GetJsPropName;
-        R.GetJsPropName = function(){
-          try {
-            return orig.apply(this, arguments);
-          } catch (e){
-            try {
-              console.error("[C3-HOOK] GetJsPropName ERROR. args=", arguments, "message=", e && e.message);
-            } catch(_){}
+      // 1) *** ÖNEML ***: Stack'te görünen fonksiyon sınıf üstünde -> Eb.Runtime.GetJsPropName
+      if (typeof Eb.Runtime.GetJsPropName === "function" && !Eb.Runtime.__gpnHooked){
+        var _origGPN = Eb.Runtime.GetJsPropName;
+        Eb.Runtime.GetJsPropName = function(){
+          try{
+            return _origGPN.apply(this, arguments);
+          }catch(e){
+            safeErr("[C3-HOOK] GetJsPropName ERROR",
+                    "args=", Array.prototype.slice.call(arguments),
+                    "message=", (e && e.message) || e);
             throw e;
           }
         };
-        R.__getJsPropNameHooked = true;
-        console.log("[C3-HOOK] GetJsPropName hooked");
+        Eb.Runtime.__gpnHooked = true;
+        safeLog("[C3-HOOK] Hooked Eb.Runtime.GetJsPropName");
       }
 
-      // 2) Event değişken yaratımı yakala (ismini logla) — mevcutsa
-      // Minified isimler değişebileceği için iki olası ad deniyoruz:
+      // 2) EventVariable.Create mevcutsa isimleri logla (minify adına göre iki olası yol)
       var EvVarClass = (window.PG && PG.EventVariable) || (window.gG && gG.EventVariable);
-      if (EvVarClass && EvVarClass.prototype && EvVarClass.prototype.Create && !EvVarClass.prototype.__evHooked){
-        var origCreate = EvVarClass.prototype.Create;
+      if (EvVarClass && EvVarClass.prototype && typeof EvVarClass.prototype.Create === "function" && !EvVarClass.prototype.__evCreateHooked){
+        var _origCreate = EvVarClass.prototype.Create;
         EvVarClass.prototype.Create = function(){
-          try {
+          try{
             var name = (this && (this.n || this.name)) || "(unknown)";
-            console.log("[C3-HOOK] Creating EventVariable:", name);
-          } catch(_){}
-          return origCreate.apply(this, arguments);
+            safeLog("[C3-HOOK] EventVariable.Create name=", name);
+          }catch(_){}
+          return _origCreate.apply(this, arguments);
         };
-        EvVarClass.prototype.__evHooked = true;
-        console.log("[C3-HOOK] EventVariable.Create hooked");
+        EvVarClass.prototype.__evCreateHooked = true;
+        safeLog("[C3-HOOK] Hooked EventVariable.Create");
       }
 
       return true;
-    } catch(_) {
+    }catch(_){
       return false;
     }
   }
 
-  // C3 kodu yüklenene kadar bekle
+  // C3 kodu gelene kadar periyodik dene
   var t = setInterval(function(){
-    if (hook()){ clearInterval(t); }
-  }, 60);
+    if (hookOnce()){ clearInterval(t); }
+  }, 80);
 })();
