@@ -6,11 +6,11 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
   <meta name="description" content="KAPI RUN Game" />
   <meta name="author" content="Okapi Team" />
-  <link rel="manifest" href="./appmanifest.json" />
+  <link rel="manifest" href="./appmanifest.json?v=20250917zz" />
   <link rel="apple-touch-icon" sizes="128x128" href="./icons/icon-128.png" />
   <link rel="apple-touch-icon" sizes="256x256" href="./icons/icon-256.png" />
   <link rel="icon" type="image/png" href="./icons/icon-256.png" />
-  <link rel="stylesheet" href="./style.css" />
+  <link rel="stylesheet" href="./style.css?v=20250917zz" />
 </head>
 <body>
   <div id="fb-root"></div>
@@ -22,7 +22,7 @@
     </div>
   </noscript>
 
-  <!-- iOS ses kilidi çözümü -->
+  <!-- iOS ses kilidi -->
   <script>
     document.addEventListener("touchstart", function () {
       try {
@@ -32,37 +32,35 @@
     }, { once: true });
   </script>
 
-  <!-- SW ve cache'i kapat (debug için) -->
+  <!-- SW ve cache'i kapat (debug sürecinde işimizi kolaylaştırıyor) -->
   <script>
     (function () {
-      if ('serviceWorker' in navigator) {
+      if ("serviceWorker" in navigator) {
         navigator.serviceWorker.getRegistrations()
           .then(rs => rs.forEach(r => r.unregister()))
-          .catch(()=>{});
+          .catch(() => {});
       }
       if (window.caches && caches.keys) {
-        caches.keys().then(keys => Promise.all(keys.map(k => caches.delete(k)))).catch(()=>{});
+        caches.keys().then(keys => Promise.all(keys.map(k => caches.delete(k)))).catch(() => {});
       }
     })();
   </script>
 
-  <!-- C3 ayarları (versiyon parametresi YOK; 404 riskini kaldırır) -->
+  <!-- C3 ayarları -->
   <script>
     window.C3_NO_WORKER = true;
     window.C3_IsSupported = true;
-    window.C3_ProjectDataUrl = "data.json";
-    window["C3_ProjectDataUrl"] = "data.json";
+    window.C3_ProjectDataUrl = "data.json?v=20250917zz";
+    window["C3_ProjectDataUrl"] = "data.json?v=20250917zz";
   </script>
 
   <!-- Telegram WebApp SDK -->
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
 
-  <!-- Köprü (submitScore tanımı burada) -->
-  <script src="./scripts/tg-bridge.js"></script>
+  <!-- Skor köprüsü -->
+  <script src="./scripts/tg-bridge.js?v=20250917zz"></script>
 
   <!-- C3 loader -->
-  <script src="./scripts/debug-hud.js?v=20250917014445"></script>
-<script src="./scripts/c3-hook.js?v=debug3"></script>
-<script type="module" src="./scripts/main.js" crossorigin="anonymous"></script>
+  <script type="module" src="./scripts/main.js?v=20250917zz" crossorigin="anonymous"></script>
 </body>
 </html>
