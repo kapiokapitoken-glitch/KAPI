@@ -1,10 +1,24 @@
 ﻿(function(){
-  // --- küçük overlay ---
-  var addOverlay=(function(){var el=null;function ensure(){if(el)return el;el=document.createElement("div");el.id="c3hookOverlay";el.style.cssText="position:fixed;left:8px;bottom:8px;max-width:90%;max-height:42%;overflow:auto;background:rgba(0,0,0,0.85);color:#0f0;font:12px/1.4 monospace;z-index:1000000;padding:8px;border:1px solid #0f0;border-radius:8px";document.addEventListener("DOMContentLoaded",function(){document.body.appendChild(el);});return el;}return function(msg){try{var box=ensure();var d=document.createElement("div");d.textContent="["+new Date().toISOString().slice(11,19)+"] "+msg;box.appendChild(d);if(box.childNodes.length>400)box.removeChild(box.firstChild);box.scrollTop=box.scrollHeight;}catch(_){} };})();
-  function slog(){try{console.log.apply(console,arguments);addOverlay(Array.prototype.join.call(arguments," "));}catch(_){}} 
-  function serr(){try{console.error.apply(console,arguments);addOverlay(Array.prototype.join.call(arguments," "));}catch(_){}} 
+  // ---- mini overlay + log helpers ----
+  var overlay=null;
+  function show(msg){
+    try{
+      if(!overlay){
+        overlay=document.createElement("div");
+        overlay.style.cssText="position:fixed;left:8px;bottom:8px;max-width:92%;max-height:42%;overflow:auto;background:rgba(0,0,0,.85);color:#0f0;font:12px/1.4 monospace;z-index:1000000;padding:8px;border:1px solid #0f0;border-radius:8px";
+        document.addEventListener("DOMContentLoaded",function(){document.body.appendChild(overlay);});
+      }
+      var d=document.createElement("div");
+      d.textContent="["+new Date().toISOString().slice(11,19)+"] "+msg;
+      overlay.appendChild(d);
+      if(overlay.childNodes.length>500) overlay.removeChild(overlay.firstChild);
+      overlay.scrollTop=overlay.scrollHeight;
+    }catch(_){}
+  }
+  function slog(){ try{ console.log.apply(console, arguments); show(Array.prototype.join.call(arguments," ")); }catch(_){} }
+  function serr(){ try{ console.error.apply(console, arguments); show(Array.prototype.join.call(arguments," ")); }catch(_){ } }
 
-  // geçersiz ad -> güvenli JS adı (ASCII/altçizgi)
+  // ---- güvenli ad üretici ----
   function toSafeName(s){
     try{
       if(s==null) return "_ev";
@@ -13,19 +27,20 @@
       s=s.replace(/[ğşŞıöÖçÇüÜ]/g,function(c){return map[c]||c;});
       s=s.replace(/[^A-Za-z0-9_$]/g,"_");
       if(/^[0-9]/.test(s)) s="_"+s;
-      return s||"_ev";
-    }catch(_){return "_ev";}
+      return s || "_ev";
+    }catch(_){ return "_ev"; }
   }
 
-  // hata halinde güvenli ada düşen sarıcı
+  // ---- sarmalayıcı (GetJsPropName için fallback döndürür) ----
   function wrapWithFallback(fn, tag){
-    if(fn && fn.__c3hookWrapped) return fn;
+    if(typeof fn!=="function") return fn;
+    if(fn.__c3hookWrapped) return fn;
     function wrapped(){
       try{ return fn.apply(this, arguments); }
       catch(e){
         var orig = (arguments && arguments.length ? arguments[0] : "(none)");
         var safe = toSafeName(orig);
-        serr("[C3-HOOK] "+tag+" ERROR -> fallback:", JSON.stringify(orig),"=>",safe,"msg=",(e&&e.message)||e);
+        serr("[C3-HOOK] "+tag+" ERROR -> fallback:", JSON.stringify(orig),"⇒",safe,"msg=",(e&&e.message)||e);
         return safe;
       }
     }
@@ -34,116 +49,177 @@
     return wrapped;
   }
 
-  // 1) Doğrudan Eb.Runtime.GetJsPropName hook (varsa)
-  function tryHookDirect(){
-    try{
-      var Eb = window.Eb;
-      if(!Eb || !Eb.Runtime) return false;
-      var R = Eb.Runtime;
-      if(typeof R.GetJsPropName === "function" && !R.GetJsPropName.__c3hookWrapped){
-        R.GetJsPropName = wrapWithFallback(R.GetJsPropName, "GetJsPropName(direct)");
-        slog("[C3-HOOK] Hooked GetJsPropName via Eb.Runtime (direct)");
-        return true;
-      }
-    }catch(_){}
-    return false;
+  // ---- Telegram yardımcıları (gerekirse payload için) ----
+  function TG(){ return (window.Telegram && window.Telegram.WebApp) ? window.Telegram.WebApp : null; }
+  function qsFromUnsafe(u){
+    if(!u) return "";
+    var pairs=[], push=(k,v)=>{ if(v!==undefined && v!==null && v!=="") pairs.push([k,String(v)]) };
+    push("auth_date",u.auth_date);
+    push("chat_instance",u.chat_instance);
+    push("chat_type",(u.chat&&u.chat.type)||u.chat_type);
+    push("query_id",u.query_id);
+    push("start_param",u.start_param);
+    push("can_send_after",u.can_send_after);
+    if(u.user){ try{ push("user", JSON.stringify(u.user)); }catch(e){} }
+    push("hash",u.hash);
+    pairs.sort((a,b)=>a[0].localeCompare(b[0]));
+    var sp=new URLSearchParams(); pairs.forEach(([k,v])=>sp.append(k,v));
+    return sp.toString();
+  }
+  function buildCtx(){
+    var t=TG(), init = t&&t.initData || "", unsafe = t&&t.initDataUnsafe || null;
+    if(!init && unsafe) init = qsFromUnsafe(unsafe);
+    return { init:init, unsafe:unsafe };
   }
 
-  // 2) Geniş tarayıcı: isim/mesaj eşleşen her fonksiyonu sar
-  var seenObjs = new WeakSet();
-  function scanAndHook(root, maxDepth){
-    var hooked=0;
+  // ---- Eb.Runtime.GetJsPropName kancaları ----
+  function hookGetJsPropNameAll(){
+    var hooked=false;
     try{
-      (function walk(obj, depth){
-        if(!obj || typeof obj!=="object" && typeof obj!=="function") return;
-        if(seenObjs.has(obj)) return; seenObjs.add(obj);
-        if(depth<=0) return;
-
-        var keys=[]; try{ keys=Object.getOwnPropertyNames(obj); }catch(_){ return; }
-        for(var i=0;i<keys.length;i++){
-          var k=keys[i], desc;
-          try{ desc=Object.getOwnPropertyDescriptor(obj,k); }catch(_){ continue; }
-          if(!desc) continue;
-          var val = (desc.get ? (function(){try{return desc.get.call(obj);}catch(_){return obj[k];}})() : obj[k]);
-
-          if(typeof val==="function"){
-            var fname=String(k), codeStr=""; try{ codeStr=Function.prototype.toString.call(val); }catch(_){}
-            var looksLikeGpn = /GetJsPropName/i.test(fname) || /invalid prop reference/.test(codeStr);
-            if(looksLikeGpn && !val.__c3hookWrapped){
-              try{
-                var wrapped = wrapWithFallback(val, "GetJsPropName(scan:"+fname+")");
-                try{ Object.defineProperty(obj,k,{configurable:true,writable:true,value:wrapped}); }catch(_){ obj[k]=wrapped; }
-                hooked++; slog("[C3-HOOK] Hooked by scan:", fname, "on", (obj&&obj.constructor&&obj.constructor.name)||"obj");
-              }catch(e){ serr("[C3-HOOK] hook fail on",fname,e); }
-            }
-          }
-
-          // derine in
-          try{
-            var child=val;
-            if(child && (typeof child==="object" || typeof child==="function")){
-              if(!seenObjs.has(child)) walk(child, depth-1);
-            }
-          }catch(_){}
+      if(window.Eb && window.Eb.Runtime){
+        // static
+        if(typeof window.Eb.Runtime.GetJsPropName==="function" && !window.Eb.Runtime.GetJsPropName.__c3hookWrapped){
+          window.Eb.Runtime.GetJsPropName = wrapWithFallback(window.Eb.Runtime.GetJsPropName, "GetJsPropName(static)");
+          slog("[C3-HOOK] Hooked Eb.Runtime.GetJsPropName (static)");
+          hooked=true;
         }
-      })(root, maxDepth||5);
-    }catch(_){}
+        // prototype (instance)
+        if(window.Eb.Runtime.prototype && typeof window.Eb.Runtime.prototype.GetJsPropName==="function" && !window.Eb.Runtime.prototype.GetJsPropName.__c3hookWrapped){
+          window.Eb.Runtime.prototype.GetJsPropName = wrapWithFallback(window.Eb.Runtime.prototype.GetJsPropName, "GetJsPropName(proto)");
+          slog("[C3-HOOK] Hooked Eb.Runtime.prototype.GetJsPropName");
+          hooked=true;
+        }
+      }
+    }catch(e){ serr("[C3-HOOK] hookGetJsPropNameAll error", e); }
     return hooked;
   }
 
-  // 3) KRTK: EventVariable.Create içinde adı SANITIZE et (GetJsPropName çağrılmadan önce)
-  function tryHookEventVar(){
+  // ---- EventVariable.Create sanitize ----
+  function hookEventVariableCreate(){
+    var ok=false;
     try{
-      var EvVar = (window.PG && PG.EventVariable) || (window.gG && gG.EventVariable);
-      if(!EvVar || !EvVar.prototype || typeof EvVar.prototype.Create!=="function" || EvVar.prototype.__evHooked) return false;
-      var orig = EvVar.prototype.Create;
-      EvVar.prototype.Create = function(){
-        try{
-          var old = (this && (this.n!=null?this.n:this.name)) || "(unknown)";
-          var safe = toSafeName(old);
-          if(old !== safe){
-            try{ this.n = safe; }catch(_){}
-            try{ this.name = safe; }catch(_){}
-            slog("[C3-HOOK] sanitized EventVariable name:", JSON.stringify(old), "=>", safe);
-          }else{
-            slog("[C3-HOOK] EventVariable.Create name OK:", safe);
-          }
-        }catch(e){ serr("[C3-HOOK] EventVariable.Create wrapper err",e); }
-        return orig.apply(this, arguments);
-      };
-      EvVar.prototype.__evHooked = true;
-      slog("[C3-HOOK] Hooked EventVariable.Create (sanitize)");
-      return true;
-    }catch(_){ return false; }
+      var cand = [ (window.PG && PG.EventVariable), (window.gG && gG.EventVariable) ].filter(Boolean);
+      for(var i=0;i<cand.length;i++){
+        var EvVar=cand[i];
+        if(EvVar && EvVar.prototype && typeof EvVar.prototype.Create==="function" && !EvVar.prototype.__evHooked){
+          (function(E){
+            var orig=E.prototype.Create;
+            E.prototype.Create=function(){
+              try{
+                var old=(this && (this.n!=null?this.n:this.name)) || "(unknown)";
+                var safe=toSafeName(old);
+                if(old!==safe){ try{ this.n=safe; }catch(_){}
+                                 try{ this.name=safe; }catch(_){}
+                  slog("[C3-HOOK] sanitized EventVariable:", JSON.stringify(old),"⇒",safe);
+                }
+              }catch(err){ serr("[C3-HOOK] EventVariable.Create sanitize err",err); }
+              return orig.apply(this, arguments);
+            };
+            E.prototype.__evHooked=true;
+            slog("[C3-HOOK] Hooked EventVariable.Create");
+            ok=true;
+          })(EvVar);
+        }
+      }
+    }catch(e){ /* ignore */ }
+    return ok;
   }
 
-  // başlat
-  tryHookDirect();
+  // ---- Güvenli tarama (yalnızca "value" tipindeki fonksiyonları, getter yok) ----
+  var visited=new WeakSet();
+  function safeScan(obj, depth, label){
+    var count=0;
+    try{
+      (function walk(o, d){
+        if(!o || (typeof o!=="object" && typeof o!=="function")) return;
+        if(visited.has(o)) return; visited.add(o);
+        if(d<=0) return;
 
-  // Eb sonradan atanırsa tekrar dene
+        var names=[]; try{ names=Object.getOwnPropertyNames(o); }catch(_){ return; }
+        for(var i=0;i<names.length;i++){
+          var k=names[i];
+          var desc; try{ desc=Object.getOwnPropertyDescriptor(o,k); }catch(_){ continue; }
+          // yalnızca data property ve function
+          if(!desc || !("value" in desc)) continue;
+          var v=desc.value;
+          if(typeof v==="function"){
+            var looks = /GetJsPropName/i.test(k);
+            if(looks && !v.__c3hookWrapped){
+              try{
+                var w=wrapWithFallback(v, "GetJsPropName(scan:"+k+")");
+                Object.defineProperty(o,k,{configurable:true,writable:true,value:w});
+                slog("[C3-HOOK] Hooked by scan:", k, "on", (o&&o.constructor&&o.constructor.name)||label||"obj");
+                count++;
+              }catch(e){ serr("[C3-HOOK] scan hook fail", k, e); }
+            }
+          }
+          // altına in (sadece plain object/function — DOM protolarına bulaşma)
+          try{
+            if(v && (typeof v==="object" || typeof v==="function")){
+              var ctor=(v&&v.constructor&&v.constructor.name)||"";
+              if(ctor==="Object" || ctor==="Function" || ctor==="" ){
+                walk(v, d-1);
+              }
+            }
+          }catch(_){}
+        }
+      })(obj, depth||3);
+    }catch(_){}
+    return count;
+  }
+
+  // ---- Eb sonradan atanırsa tekrar dene ----
   try{
     var __Eb = window.Eb;
     Object.defineProperty(window,"Eb",{configurable:true,enumerable:true,
-      get(){return __Eb;},
-      set(v){ __Eb=v; tryHookDirect(); }
+      get(){ return __Eb; },
+      set(v){ __Eb=v; hookGetJsPropNameAll(); }
     });
     slog("[C3-HOOK] window.Eb setter installed");
-  }catch(e){ serr("[C3-HOOK] defineProperty failed",e); }
+  }catch(e){ serr("[C3-HOOK] defineProperty(Eb) failed", e); }
 
-  // periyodik tarama: direct + scan + EventVariable sanitize
-  var ticks=0;
-  var timer=setInterval(function(){
-    var a=tryHookDirect();
-    var b=scanAndHook(window,5);
-    var c=tryHookEventVar();
-    if((a||b||c) && ++ticks>50) clearInterval(timer);
-  }, 80);
+  // ---- periyodik: önce direkt hook, sonra güvenli scan, sonra EventVariable ----
+  var tries=0, timer=setInterval(function(){
+    var a = hookGetJsPropNameAll();
+    var b = 0;
+    try{
+      // sadece güvenli kökler
+      if(window.PG) b += safeScan(window.PG, 3, "PG");
+      if(window.gG) b += safeScan(window.gG, 3, "gG");
+      if(window.Eb) b += safeScan(window.Eb, 3, "Eb");
+      // window’u çok derine indirmeyelim
+      b += safeScan(window, 1, "window");
+    }catch(_){}
+    var c = hookEventVariableCreate();
 
-  // global hatalar
+    if((a||b||c) && ++tries>60) clearInterval(timer);
+  }, 120);
+
+  // ---- global hata logları ----
   window.addEventListener("unhandledrejection", function(e){
     serr("[C3-HOOK] unhandledrejection", (e && (e.reason && e.reason.message)) || (e && e.reason) || e);
   });
   window.addEventListener("error", function(e){
     serr("[C3-HOOK] window.error", e && e.message, e && e.filename, e && e.lineno);
   });
+
+  // ---- submitScore fallback (değiştirmiyoruz, lazım olursa) ----
+  if (typeof window.submitScore !== "function") {
+    window.submitScore = async function(score){
+      try{
+        if(!Number.isFinite(score) || score<0) throw new Error("Invalid score");
+        var ctx=buildCtx();
+        var user_id=null, username=null, auth_date=null, hash=null;
+        try{
+          var p=new URLSearchParams(ctx.init||"");
+          var us=p.get("user"); if(us){ try{us=JSON.parse(us); user_id=us&&us.id||null; username=us&&us.username||null;}catch(_){ } }
+          auth_date=p.get("auth_date"); hash=p.get("hash");
+        }catch(_){}
+        var payload={ score:Math.floor(score), user_id:user_id, username:username, sig:hash, auth_date:auth_date, init_data:(ctx.init||"") };
+        var r=await fetch("/api/score",{method:"POST",headers:{"Content-Type":"application/json","X-Telegram-Init-Data":(ctx.init||"")},body:JSON.stringify(payload),credentials:"include"});
+        var t=""; try{ t=await r.text(); }catch(_){}
+        slog("[C3-HOOK] submitScore ->", r.status, t);
+      }catch(e){ serr("[C3-HOOK] submitScore error", e); }
+    };
+  }
 })();
