@@ -38,20 +38,6 @@
     }, { once: true });
   </script>
 
-  <!-- SW ve cache'i kapat (debug sırasında faydalı) -->
-  <script>
-    (function () {
-      if ("serviceWorker" in navigator) {
-        navigator.serviceWorker.getRegistrations()
-          .then(rs => rs.forEach(r => r.unregister()))
-          .catch(() => {});
-      }
-      if (window.caches && caches.keys) {
-        caches.keys().then(keys => Promise.all(keys.map(k => caches.delete(k)))).catch(() => {});
-      }
-    })();
-  </script>
-
   <!-- C3 ayarları -->
   <script>
     window.C3_NO_WORKER = true;
@@ -64,12 +50,7 @@
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
 
   <!-- Skor köprüsü -->
-  <script src="./scripts/tg-bridge.js?v=20250917zz"></script>
-
-  <!-- (Opsiyonel) C3 HOOK - desktop tanılama/log -->
-  <script src="./scripts/c3-hook.js?v=debug5"></script>
-
-  <!-- Sadece mobil Telegram'da oyunu başlat; desktop/web'de uyarı göster -->
+  <script src="./scripts/tg-bridge.js?v=20250917zz"></script><!-- Sadece mobil Telegram'da oyunu başlat; desktop/web'de uyarı göster -->
   <script>
   (function(){
     function isMobileTelegram(){
@@ -110,3 +91,5 @@
   </script>
 </body>
 </html>
+
+
