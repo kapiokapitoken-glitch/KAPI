@@ -1,5 +1,5 @@
 ﻿(function(){
-  // --- küçük HUD ---
+  // --- mini HUD ---
   var hud=null; function logLine(t){ try{
     if(!hud){ hud=document.createElement("div");
       hud.style.cssText="position:fixed;left:8px;bottom:8px;max-width:92%;max-height:42%;overflow:auto;background:rgba(0,0,0,.85);color:#0f0;font:12px/1.4 monospace;z-index:1000000;padding:8px;border:1px solid #0f0;border-radius:8px";
@@ -11,7 +11,7 @@
   function slog(){ try{ console.log.apply(console, arguments); logLine(Array.prototype.join.call(arguments," ")); }catch(_){ } }
   function serr(){ try{ console.error.apply(console, arguments); logLine(Array.prototype.join.call(arguments," ")); }catch(_){ } }
 
-  // --- güvenli isim (Türkçe karakter map + JS identifier) ---
+  // --- güvenli isim (TR harf haritası + JS identifier) ---
   function toSafeName(s){
     try{
       if(s==null) return "_n";
@@ -24,7 +24,7 @@
     }catch(_){ return "_n"; }
   }
 
-  // --- data.json sanitizasyonu: tüm "name"/"n" alanları normalize ---
+  // --- data.json sanitizasyonu ---
   function sanitizeDataJsonText(txt){
     try{
       var obj = JSON.parse(txt);
@@ -35,7 +35,6 @@
         for(var k in o){
           if(!Object.prototype.hasOwnProperty.call(o,k)) continue;
           var v = o[k];
-          // C3’ün event variable/param/ad alanları çoğunlukla "n" veya "name"
           if((k==="n" || k==="name") && typeof v==="string"){
             var saf = toSafeName(v);
             if(saf !== v){ o[k]=saf; changed++; }
@@ -47,8 +46,8 @@
         slog("[C3-HOOK] data.json sanitized; changed =", changed);
         return JSON.stringify(obj);
       }else{
-        slog("[C3-HOOK] data.json sanitized; changed = 0 (ok)");
-        return null; // dokunma
+        slog("[C3-HOOK] data.json sanitized; changed = 0");
+        return null;
       }
     }catch(e){
       serr("[C3-HOOK] sanitize parse error:", e && e.message);
@@ -56,7 +55,7 @@
     }
   }
 
-  // --- fetch proxy: data.json yakala ve düzelt ---
+  // --- fetch proxy: data.json'ı yakala ve düzelt ---
   try{
     if(window.fetch){
       var realFetch = window.fetch.bind(window);
@@ -82,7 +81,40 @@
     }
   }catch(e){ serr("[C3-HOOK] fetch hook failed:", e && e.message); }
 
-  // (steğe bağlı) genel hata log’u
+  // --- Hedefi doğrudan patch'le: Eb.Runtime.GetJsPropName ---
+  function tryPatchGetJsPropName(){
+    try{
+      if(!window.Eb || !Eb.Runtime || typeof Eb.Runtime.GetJsPropName!=="function") return false;
+      if(Eb.Runtime._getJsPropNamePatched) return true;
+      var orig = Eb.Runtime.GetJsPropName.bind(Eb.Runtime);
+      Eb.Runtime.GetJsPropName = function(name){
+        // sadece stringleri normalize et; diğer tiplere dokunma
+        var inName = name;
+        var n = (typeof name==="string") ? toSafeName(name) : name;
+        try{
+          return orig(n);
+        }catch(e){
+          // hangi isimde patladığını gör
+          serr("[C3-HOOK] GetJsPropName throw; in=", inName, "safe=", n, e && e.message);
+          throw e;
+        }
+      };
+      Eb.Runtime._getJsPropNamePatched = true;
+      slog("[C3-HOOK] GetJsPropName patched");
+      return true;
+    }catch(e){
+      serr("[C3-HOOK] patch GetJsPropName failed:", e && e.message);
+      return false;
+    }
+  }
+
+  // Eb henüz yoksa bekle
+  var tries = 0, tmr = setInterval(function(){
+    if(tryPatchGetJsPropName()){ clearInterval(tmr); }
+    if(++tries>200){ clearInterval(tmr); serr("[C3-HOOK] patch timeout"); }
+  }, 50);
+
+  // loglayıcılar
   window.addEventListener("unhandledrejection", function(e){
     serr("[C3-HOOK] unhandledrejection", (e && (e.reason && e.reason.message)) || (e && e.reason) || e);
   });
