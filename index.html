@@ -7,10 +7,12 @@
   <meta name="description" content="KAPI RUN Game" />
   <meta name="author" content="Okapi Team" />
 
+  <!-- PWA / ikonlar -->
   <link rel="manifest" href="./appmanifest.json?v=20250917zz" />
   <link rel="apple-touch-icon" sizes="128x128" href="./icons/icon-128.png" />
   <link rel="apple-touch-icon" sizes="256x256" href="./icons/icon-256.png" />
   <link rel="icon" type="image/png" href="./icons/icon-256.png" />
+
   <link rel="stylesheet" href="./style.css?v=20250917zz" />
 </head>
 <body>
@@ -28,7 +30,10 @@
     document.addEventListener("touchstart", function () {
       try {
         var Ctx = window.AudioContext || window.webkitAudioContext;
-        if (Ctx) { var ctx = new Ctx(); if (ctx.state === "suspended" && ctx.resume) ctx.resume(); }
+        if (Ctx) {
+          var ctx = new Ctx();
+          if (ctx.state === "suspended" && ctx.resume) ctx.resume();
+        }
       } catch (e) {}
     }, { once: true });
   </script>
@@ -61,10 +66,47 @@
   <!-- Skor köprüsü -->
   <script src="./scripts/tg-bridge.js?v=20250917zz"></script>
 
-  <!-- C3 HOOK (Telegram Desktop siyah ekran tanısı) -->
+  <!-- (Opsiyonel) C3 HOOK - desktop tanılama/log -->
   <script src="./scripts/c3-hook.js?v=debug5"></script>
 
-  <!-- C3 loader -->
-  <script type="module" src="./scripts/main.js?v=20250917zz" crossorigin="anonymous"></script>
+  <!-- Sadece mobil Telegram'da oyunu başlat; desktop/web'de uyarı göster -->
+  <script>
+  (function(){
+    function isMobileTelegram(){
+      try {
+        var TG = window.Telegram && window.Telegram.WebApp ? window.Telegram.WebApp : null;
+        if (!TG) return false; // Telegram WebApp değil → başlatma
+        var p = String(TG.platform || "").toLowerCase();
+        return p === "android" || p === "ios"; // sadece mobil Telegram
+      } catch(e){ return false; }
+    }
+
+    if (isMobileTelegram()) {
+      // C3 loader'ı dinamik ekle
+      var s = document.createElement("script");
+      s.type = "module";
+      s.src = "./scripts/main.js?v=20250917zz";
+      s.crossOrigin = "anonymous";
+      document.head.appendChild(s);
+    } else {
+      // Desktop / web: uyarı overlay
+      var div = document.createElement("div");
+      div.style.cssText = "position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:#111;color:#fff;font:16px/1.5 system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;text-align:center;padding:24px;z-index:999999;";
+      div.innerHTML =
+        '<div>' +
+          '<h2 style="margin:0 0 12px">Lütfen <b>mobil Telegram</b> uygulamasından oynayın</h2>' +
+          '<div style="opacity:.85;margin-bottom:16px">Bu oyun yalnızca iOS/Android Telegram uygulamasında çalışır.</div>' +
+          '<div><a href="https://t.me/KapiRun_bot/OKAPI" style="display:inline-block;padding:10px 14px;background:#2ea44f;color:#fff;border-radius:8px;text-decoration:none">Telegram’da Aç</a></div>' +
+        '</div>';
+      document.body.appendChild(div);
+
+      // Varsa Telegram UI butonlarını gizle
+      try{
+        var TG = window.Telegram && window.Telegram.WebApp ? window.Telegram.WebApp : null;
+        if (TG) { TG.MainButton.hide(); TG.BackButton.hide(); TG.disableClosingConfirmation(); TG.ready(); }
+      }catch(e){}
+    }
+  })();
+  </script>
 </body>
 </html>
