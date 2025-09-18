@@ -11,7 +11,7 @@
   function slog(){ try{ console.log.apply(console, arguments); logLine(Array.prototype.join.call(arguments," ")); }catch(_){ } }
   function serr(){ try{ console.error.apply(console, arguments); logLine(Array.prototype.join.call(arguments," ")); }catch(_){ } }
 
-  // --- güvenli isim (TR harf haritası + JS identifier) ---
+  // --- güvenli isim ---
   function toSafeName(s){
     try{
       if(s==null) return "_n";
@@ -81,42 +81,67 @@
     }
   }catch(e){ serr("[C3-HOOK] fetch hook failed:", e && e.message); }
 
-  // --- Hedefi doğrudan patch'le: Eb.Runtime.GetJsPropName ---
-  function tryPatchGetJsPropName(){
+  // --- GetJsPropName patch ---
+  function patchGetJsPropNameFromRoot(root){
     try{
-      if(!window.Eb || !Eb.Runtime || typeof Eb.Runtime.GetJsPropName!=="function") return false;
-      if(Eb.Runtime._getJsPropNamePatched) return true;
-      var orig = Eb.Runtime.GetJsPropName.bind(Eb.Runtime);
-      Eb.Runtime.GetJsPropName = function(name){
-        // sadece stringleri normalize et; diğer tiplere dokunma
-        var inName = name;
-        var n = (typeof name==="string") ? toSafeName(name) : name;
-        try{
-          return orig(n);
-        }catch(e){
-          // hangi isimde patladığını gör
-          serr("[C3-HOOK] GetJsPropName throw; in=", inName, "safe=", n, e && e.message);
-          throw e;
-        }
-      };
-      Eb.Runtime._getJsPropNamePatched = true;
-      slog("[C3-HOOK] GetJsPropName patched");
-      return true;
-    }catch(e){
-      serr("[C3-HOOK] patch GetJsPropName failed:", e && e.message);
+      var R = root && root.Runtime;
+      if(R && typeof R.GetJsPropName==="function"){
+        if(R._gjpnPatched) return true;
+        var orig = R.GetJsPropName.bind(R);
+        R.GetJsPropName = function(name){
+          var inName = name;
+          var n = (typeof name==="string") ? toSafeName(name) : name;
+          try { return orig(n); }
+          catch(e){ serr("[C3-HOOK] GetJsPropName throw; in=", inName, "safe=", n, e && e.message); throw e; }
+        };
+        R._gjpnPatched = true;
+        slog("[C3-HOOK] GetJsPropName patched");
+        return true;
+      }
       return false;
-    }
+    }catch(e){ serr("[C3-HOOK] tryPatchOnObj error:", e && e.message); return false; }
   }
 
-  // Eb henüz yoksa bekle
-  var tries = 0, tmr = setInterval(function(){
-    if(tryPatchGetJsPropName()){ clearInterval(tmr); }
-    if(++tries>200){ clearInterval(tmr); serr("[C3-HOOK] patch timeout"); }
-  }, 50);
+  // 1) Eb zaten varsa hemen dene
+  if (window.Eb) { patchGetJsPropNameFromRoot(window.Eb); }
 
-  // loglayıcılar
+  // 2) Eb atanınca devreye girecek setter
+  (function installSetter(){
+    try{
+      var desc = Object.getOwnPropertyDescriptor(window, "Eb");
+      if(!desc || desc.configurable){
+        var _Eb = window.Eb;
+        Object.defineProperty(window, "Eb", {
+          configurable: true,
+          enumerable: true,
+          get: function(){ return _Eb; },
+          set: function(v){
+            _Eb = v;
+            try{ if(patchGetJsPropNameFromRoot(v)){ slog("[C3-HOOK] patched via Eb setter"); } }catch(_){}
+          }
+        });
+        slog("[C3-HOOK] window.Eb setter installed");
+        if(_Eb){ try{ patchGetJsPropNameFromRoot(_Eb); }catch(_){} }
+      }else{
+        slog("[C3-HOOK] window.Eb not configurable; skipping setter");
+      }
+    }catch(e){ serr("[C3-HOOK] Eb setter error:", e && e.message); }
+  })();
+
+  // 3) Yedek: belirli süre Eb’yi tarayalım
+  (function poll(){
+    var tries = 0, tmr = setInterval(function(){
+      try{
+        if(window.Eb && patchGetJsPropNameFromRoot(window.Eb)){ clearInterval(tmr); return; }
+      }catch(_){}
+      if(++tries>200){ clearInterval(tmr); serr("[C3-HOOK] patch timeout"); }
+    }, 50);
+  })();
+
+  // hatalar
   window.addEventListener("unhandledrejection", function(e){
-    serr("[C3-HOOK] unhandledrejection", (e && (e.reason && e.reason.message)) || (e && e.reason) || e);
+    var m = (e && e.reason && e.reason.message) || (e && e.reason) || e;
+    serr("[C3-HOOK] unhandledrejection", m);
   });
   window.addEventListener("error", function(e){
     serr("[C3-HOOK] window.error", e && e.message, e && e.filename, e && e.lineno);
