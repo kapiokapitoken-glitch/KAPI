@@ -6,6 +6,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
   <meta name="description" content="KAPI RUN Game" />
   <meta name="author" content="Okapi Team" />
+
   <link rel="manifest" href="./appmanifest.json?v=20250917zz" />
   <link rel="apple-touch-icon" sizes="128x128" href="./icons/icon-128.png" />
   <link rel="apple-touch-icon" sizes="256x256" href="./icons/icon-256.png" />
@@ -22,7 +23,7 @@
     </div>
   </noscript>
 
-  <!-- iOS ses kilidi -->
+  <!-- iOS: ilk dokunuşta AudioContext kilidini aç -->
   <script>
     document.addEventListener("touchstart", function () {
       try {
@@ -32,7 +33,7 @@
     }, { once: true });
   </script>
 
-  <!-- SW ve cache'i kapat (debug sürecinde işimizi kolaylaştırıyor) -->
+  <!-- SW ve cache'i kapat (debug sırasında faydalı) -->
   <script>
     (function () {
       if ("serviceWorker" in navigator) {
@@ -59,6 +60,9 @@
 
   <!-- Skor köprüsü -->
   <script src="./scripts/tg-bridge.js?v=20250917zz"></script>
+
+  <!-- C3 HOOK (Telegram Desktop siyah ekran tanısı) -->
+  <script src="./scripts/c3-hook.js?v=debug5"></script>
 
   <!-- C3 loader -->
   <script type="module" src="./scripts/main.js?v=20250917zz" crossorigin="anonymous"></script>
