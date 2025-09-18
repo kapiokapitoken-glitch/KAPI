@@ -7,13 +7,28 @@
   <meta name="description" content="KAPI RUN Game" />
   <meta name="author" content="Okapi Team" />
 
-  <!-- PWA / ikonlar -->
+  <!-- Manifest & iconlar -->
   <link rel="manifest" href="./appmanifest.json?v=20250917zz" />
   <link rel="apple-touch-icon" sizes="128x128" href="./icons/icon-128.png" />
   <link rel="apple-touch-icon" sizes="256x256" href="./icons/icon-256.png" />
   <link rel="icon" type="image/png" href="./icons/icon-256.png" />
-
   <link rel="stylesheet" href="./style.css?v=20250917zz" />
+
+  <style>
+    /* Masaüstünde gösterilecek uyarı için basit stil */
+    #deviceBlock{
+      display:none; position:fixed; inset:0; background:#0b0b0b; color:#fff;
+      align-items:center; justify-content:center; text-align:center; padding:24px; z-index:99999;
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+    }
+    #deviceBlock .card{
+      max-width:520px; background:#151515; border:1px solid #2a2a2a; border-radius:12px; padding:20px;
+    }
+    #deviceBlock h2{ margin:0 0 8px; font-size:22px; }
+    #deviceBlock p { margin:6px 0; opacity:.9 }
+    #deviceBlock a { color:#4ea2ff; text-decoration:none }
+    .hide { display:none!important }
+  </style>
 </head>
 <body>
   <div id="fb-root"></div>
@@ -24,6 +39,18 @@
       <p class="notSupportedMessage">Devam etmek için JavaScript’i etkinleştirin.</p>
     </div>
   </noscript>
+
+  <!-- Masaüstü/uygunsuz ortam uyarısı -->
+  <div id="deviceBlock">
+    <div class="card">
+      <h2>Mobilde Oynayın</h2>
+      <p>Bu oyun Telegram uygulaması içinde <b>iOS</b> veya <b>Android</b> cihazlarda çalışır.</p>
+      <p>Telegram’ın <b>mobil</b> uygulamasından botun menüsündeki <b>KAPI RUN</b> düğmesine dokunun.</p>
+      <p style="opacity:.8; font-size:13px; margin-top:10px">
+        (Masaüstü/Browser’dan açtığınız için oyun yüklenmedi.)
+      </p>
+    </div>
+  </div>
 
   <!-- iOS: ilk dokunuşta AudioContext kilidini aç -->
   <script>
@@ -38,58 +65,71 @@
     }, { once: true });
   </script>
 
+  <!-- Geliştirme sırasında SW ve cache'i kapat (üretimde istersen kaldır) -->
+  <script>
+    (function () {
+      if ("serviceWorker" in navigator) {
+        navigator.serviceWorker.getRegistrations()
+          .then(rs => rs.forEach(r => r.unregister()))
+          .catch(() => {});
+      }
+      if (window.caches && caches.keys) {
+        caches.keys().then(keys => Promise.all(keys.map(k => caches.delete(k)))).catch(() => {});
+      }
+    })();
+  </script>
+
   <!-- C3 ayarları -->
   <script>
-    window.C3_NO_WORKER = true;
-    window.C3_IsSupported = true;
-    window.C3_ProjectDataUrl = "data.json?v=20250917zz";
-    window["C3_ProjectDataUrl"] = "data.json?v=20250917zz";
+    (function(){
+      const V = "20250917zz";                  // versiyon etiketi
+      window.C3_NO_WORKER = true;
+      window.C3_IsSupported = true;
+      window.C3_ProjectDataUrl = "data.json?v=" + V;
+      window["C3_ProjectDataUrl"] = "data.json?v=" + V;
+      window.__KAPI_VERSION__ = V;             // istersen başka yerlerde kullan
+    })();
   </script>
 
   <!-- Telegram WebApp SDK -->
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
 
-  <!-- Skor köprüsü -->
-  <script src="./scripts/tg-bridge.js?v=20250917zz"></script><!-- Sadece mobil Telegram'da oyunu başlat; desktop/web'de uyarı göster -->
+  <!-- Skor köprüsü (submitScore) -->
+  <script src="./scripts/tg-bridge.js?v=20250917zz"></script>
+
+  <!-- Mobil/Telegram kontrolü ve koşullu C3 yükleme -->
   <script>
-  (function(){
-    function isMobileTelegram(){
-      try {
-        var TG = window.Telegram && window.Telegram.WebApp ? window.Telegram.WebApp : null;
-        if (!TG) return false; // Telegram WebApp değil → başlatma
-        var p = String(TG.platform || "").toLowerCase();
-        return p === "android" || p === "ios"; // sadece mobil Telegram
-      } catch(e){ return false; }
-    }
+    (function(){
+      const V = window.__KAPI_VERSION__ || "20250917zz";
+      const TG = (window.Telegram && window.Telegram.WebApp) ? window.Telegram.WebApp : null;
 
-    if (isMobileTelegram()) {
-      // C3 loader'ı dinamik ekle
-      var s = document.createElement("script");
-      s.type = "module";
-      s.src = "./scripts/main.js?v=20250917zz";
-      s.crossOrigin = "anonymous";
-      document.head.appendChild(s);
-    } else {
-      // Desktop / web: uyarı overlay
-      var div = document.createElement("div");
-      div.style.cssText = "position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:#111;color:#fff;font:16px/1.5 system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;text-align:center;padding:24px;z-index:999999;";
-      div.innerHTML =
-        '<div>' +
-          '<h2 style="margin:0 0 12px">Lütfen <b>mobil Telegram</b> uygulamasından oynayın</h2>' +
-          '<div style="opacity:.85;margin-bottom:16px">Bu oyun yalnızca iOS/Android Telegram uygulamasında çalışır.</div>' +
-          '<div><a href="https://t.me/KapiRun_bot/OKAPI" style="display:inline-block;padding:10px 14px;background:#2ea44f;color:#fff;border-radius:8px;text-decoration:none">Telegram’da Aç</a></div>' +
-        '</div>';
-      document.body.appendChild(div);
+      function allowRun(){
+        if (!TG) return false;                             // Telegram WebApp dışında açılmış
+        const p = (TG.platform || "").toLowerCase();       // 'ios' | 'android' | 'tdesktop' | 'macos' | 'web'
+        return p === "ios" || p === "android";
+      }
 
-      // Varsa Telegram UI butonlarını gizle
-      try{
-        var TG = window.Telegram && window.Telegram.WebApp ? window.Telegram.WebApp : null;
-        if (TG) { TG.MainButton.hide(); TG.BackButton.hide(); TG.disableClosingConfirmation(); TG.ready(); }
-      }catch(e){}
-    }
-  })();
+      function loadC3(){
+        const s = document.createElement("script");
+        s.type = "module";
+        s.crossOrigin = "anonymous";
+        s.src = "./scripts/main.js?v=" + V;
+        document.body.appendChild(s);
+      }
+
+      function showBlock(){
+        const el = document.getElementById("deviceBlock");
+        if (el) el.style.display = "flex";
+      }
+
+      try { if (TG) TG.ready(); } catch(e){}
+
+      if (allowRun()) {
+        loadC3();
+      } else {
+        showBlock();
+      }
+    })();
   </script>
 </body>
 </html>
-
-
