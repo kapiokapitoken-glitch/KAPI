@@ -6,7 +6,7 @@ import hmac
 import hashlib
 import time
 from typing import Any, Dict, Optional
-from urllib.parse import urlencode, parse_qs, parse_qsl, unquote_plus
+from urllib.parse import parse_qs, parse_qsl, unquote_plus
 
 from fastapi import FastAPI, Request, HTTPException, status, Header
 from fastapi.responses import JSONResponse, FileResponse, PlainTextResponse
@@ -16,7 +16,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncEngine
 from sqlalchemy import text
 
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo
 from telegram.ext import Application, CommandHandler, ContextTypes
 
 # =========================
@@ -44,7 +44,7 @@ class NoStoreForStatic(BaseHTTPMiddleware):
         p = request.url.path or ""
         if p.startswith(("/images", "/scripts", "/media", "/icons")) or p in (
             "/style.css", "/data.json", "/appmanifest.json", "/manifest.json",
-            "/sw.js", "/offline.json", "/index.html"
+            "/sw.js", "/offline.json", "/index.html", "/webapp-check.html"
         ):
             response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
             response.headers["Pragma"] = "no-cache"
@@ -71,14 +71,6 @@ async def health() -> Dict[str, Any]:
 async def list_routes():
     return [{"path": r.path, "methods": list(getattr(r, "methods", []))} for r in app.routes]
 
-@app.get("/")
-async def serve_index():
-    index_path = os.path.join(os.getcwd(), "index.html")
-    if os.path.isfile(index_path):
-        return FileResponse(index_path, media_type="text/html")
-    return JSONResponse({"ok": True, "hint": "index.html not found"}, status_code=200)
-
-# ---------- Root-level game files ----------
 def _first_existing(filename: str, fallback: bool = True):
     # 1) CWD (project root on DO)
     p1 = os.path.join(os.getcwd(), filename)
@@ -91,6 +83,20 @@ def _first_existing(filename: str, fallback: bool = True):
         if os.path.isfile(p2):
             return p2
     return None
+
+@app.get("/")
+async def serve_index():
+    p = _first_existing("index.html")
+    if p:
+        return FileResponse(p, media_type="text/html")
+    return JSONResponse({"ok": True, "hint": "index.html not found"}, status_code=200)
+
+@app.get("/webapp-check.html")
+async def serve_webapp_check():
+    p = _first_existing("webapp-check.html")
+    if p:
+        return FileResponse(p, media_type="text/html")
+    raise HTTPException(status_code=404, detail="webapp-check.html not found")
 
 @app.get("/style.css")
 async def serve_style_css():
@@ -107,7 +113,6 @@ async def serve_data_json():
     p = _first_existing("data.json")
     if not p:
         raise HTTPException(status_code=404, detail="data.json not found")
-
     return FileResponse(
         p,
         media_type="application/json",
@@ -141,13 +146,9 @@ async def serve_service_worker():
 
 @app.get("/offline.json")
 async def serve_offline_json():
-    """
-    offline.json'u kökten servis eder ve agresif cache'i engeller.
-    """
     p = _first_existing("offline.json")
     if not p:
         raise HTTPException(status_code=404, detail="offline.json not found")
-
     return FileResponse(
         p,
         media_type="application/json",
@@ -206,11 +207,11 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = update.message or update.effective_message
     if not msg:
         return
-    # Telegram cache-bust için URL’ye ?v=timestamp parametresi ekle
+    # Telegram içinde WebApp olarak aç (initData gelmesi için 'web_app' kullan)
     v = str(int(time.time()))
     sep = "&" if "?" in PUBLIC_GAME_URL else "?"
     url = f"{PUBLIC_GAME_URL}{sep}v={v}"
-    kb = [[InlineKeyboardButton("Play the Game", url=url)]]
+    kb = [[InlineKeyboardButton("Play the Game", web_app=WebAppInfo(url=url))]]
     await msg.reply_text("Welcome to KAPI RUN!", reply_markup=InlineKeyboardMarkup(kb))
 
 async def cmd_top(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -278,8 +279,8 @@ def _hmac_ok(user_id: int, score: int, sig: str) -> bool:
 def _check_webapp_initdata(init_data: str, bot_token: str) -> bool:
     """
     Telegram WebApp initData doğrulaması (bot token ile).
-    Kural: data_check_string = 'hash' HARÇ TÜM parametreler (signature DAHL),
-    alfabetik sırada key=value ve '\\n' ile birleştirilir.
+    Kural: data_check_string = 'hash' HARİÇ TÜM parametreler (signature DAHİL),
+    alfabetik sırada key=value ve '\n' ile birleştirilir.
     secret = HMAC_SHA256(key=b"WebAppData", msg=bot_token)
     calc   = HMAC_SHA256(key=secret, msg=data_check_string).hexdigest()
     """
@@ -296,7 +297,7 @@ def _check_webapp_initdata(init_data: str, bot_token: str) -> bool:
             if k == "hash":
                 hash_val = v
             else:
-                # ÖNEML: 'signature' dahil, sadece 'hash' hariç
+                # ÖNEMLİ: 'signature' dahildir; sadece 'hash' hariç tutulur
                 pairs.append((k, v))
 
         if not hash_val:
@@ -308,7 +309,6 @@ def _check_webapp_initdata(init_data: str, bot_token: str) -> bool:
         secret = hmac.new(b"WebAppData", bot_token.strip().encode("utf-8"), hashlib.sha256).digest()
         calc = hmac.new(secret, data_check_string.encode("utf-8"), hashlib.sha256).hexdigest()
 
-        # genelde hash lower-case gelir, yine de güvenli kıyas
         return hmac.compare_digest(calc.lower(), hash_val.lower())
     except Exception as e:
         print("initdata verify error:", e, file=sys.stderr)
