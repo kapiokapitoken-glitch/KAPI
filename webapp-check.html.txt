@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<title>Telegram WebApp Self-Test</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+body{font-family:system-ui,Segoe UI,Arial,sans-serif;margin:16px}
+.ok{color:#0a0;font-weight:700}.bad{color:#b00;font-weight:700}
+textarea{width:100%;height:140px;font-family:ui-monospace,SFMono-Regular,Consolas,monospace}
+button{padding:8px 12px;margin-right:8px;margin-top:8px}
+pre{background:#111;color:#0f0;padding:10px;overflow:auto;white-space:pre-wrap}
+.small{font-size:12px;color:#666}
+</style>
+</head>
+<body>
+<h2>Telegram WebApp Self-Test</h2>
+<p class="small">Bu sayfa Telegram içinden WebApp olarak açılmalı. (Menü butonundan)</p>
+<div id="env"></div>
+<div>
+  <button id="btnCopy">Copy initData</button>
+  <button id="btnSend">Send 123</button>
+  <button id="btnProbe">Probe C3 assets</button>
+</div>
+<h3>initData</h3>
+<textarea id="ta"></textarea>
+<h3>Parsed</h3>
+<pre id="parsed"></pre>
+<h3>Logs</h3>
+<pre id="log"></pre>
+
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<script>
+(function(){
+  const logEl = document.getElementById('log');
+  const log = (...a)=>{ logEl.textContent += a.join(' ')+'\\n'; logEl.scrollTop = logEl.scrollHeight; };
+
+  const TG = window.Telegram && window.Telegram.WebApp ? window.Telegram.WebApp : null;
+  const isTG = !!TG, platform = isTG?TG.platform:'n/a', version=isTG?TG.version:'n/a';
+
+  function qsFromUnsafe(u){
+    if(!u) return "";
+    const pairs=[]; const push=(k,v)=>{ if(v!==undefined && v!==null && v!=="") pairs.push([k,String(v)]) };
+    push("auth_date",u.auth_date); push("chat_instance",u.chat_instance);
+    push("chat_type",(u.chat&&u.chat.type)||u.chat_type); push("query_id",u.query_id);
+    push("start_param",u.start_param); push("can_send_after",u.can_send_after);
+    if(u.user){ try{ push("user", JSON.stringify(u.user)); }catch(e){} }
+    // ÖNEMLİ: hash DAHİL
+    push("hash",u.hash);
+    pairs.sort((a,b)=>a[0].localeCompare(b[0]));
+    const usp=new URLSearchParams(); pairs.forEach(([k,v])=>usp.append(k,v));
+    return usp.toString();
+  }
+
+  document.getElementById('env').innerHTML =
+    'Telegram.WebApp: ' + (isTG?'<span class="ok">PRESENT</span>':'<span class="bad">ABSENT</span>')+
+    ' | platform: <b>'+platform+'</b> | version: <b>'+version+'</b>';
+
+  let init="", unsafe=null;
+  try{
+    unsafe = isTG ? TG.initDataUnsafe : null;
+    init   = (isTG && TG.initData) || qsFromUnsafe(unsafe) || "";
+  }catch(e){ log('ERR initData:',e); }
+
+  const ta=document.getElementById('ta'); ta.value=init;
+
+  // parsed
+  try{
+    const p=new URLSearchParams(init); const obj={};
+    for(const [k,v] of p.entries()) obj[k]=v;
+    if(obj.user){ try{ obj.user=JSON.parse(obj.user); }catch(e){} }
+    document.getElementById('parsed').textContent=JSON.stringify(obj,null,2);
+  }catch(e){ document.getElementById('parsed').textContent=String(e); }
+
+  document.getElementById('btnCopy').onclick = async ()=>{
+    try{
+      await navigator.clipboard.writeText(ta.value||"");
+      log('Copied initData len=',(ta.value||"").length,' hasHash=',/(^|&)hash=/.test(ta.value||""));
+    }catch(e){ log('Clipboard error:',e); }
+  };
+
+  document.getElementById('btnSend').onclick = async ()=>{
+    try{
+      const initData = ta.value || '';
+      const params = new URLSearchParams(initData);
+      let user_id=null, username=null, hash=null;
+      const userStr=params.get('user');
+      if(userStr){ try{ const u=JSON.parse(userStr); user_id=u&&u.id||null; username=u&&u.username||null; }catch(e){} }
+      hash=params.get('hash');
+
+      const payload = {
+        score: 123,
+        user_id,
+        username,
+        sig: hash,         // legacy alanı dolduruyoruz (server WebApp imzasını zaten başlıktan doğrulayacak)
+        init_data: initData
+      };
+
+      const res = await fetch('/api/score', {
+        method:'POST',
+        headers: {
+          'Content-Type':'application/json',
+          'X-Telegram-Init-Data': initData
+        },
+        body: JSON.stringify(payload),
+        credentials:'include'
+      });
+      const t = await res.text().catch(()=> '');
+      log('POST /api/score payload:', JSON.stringify({
+        score: payload.score,
+        user_id,
+        username,
+        sig_len: hash?hash.length:0,
+        init_len: initData.length
+      }));
+      log('RESP', res.status, t);
+    }catch(e){ log('SEND error:', e); }
+  };
+
+  document.getElementById('btnProbe').onclick = async ()=>{
+    try{
+      const a = await fetch('./scripts/main.js', {cache:'no-store'});
+      log('PROBE ./scripts/main.js ->', a.status);
+      const b = await fetch('./data.json', {cache:'no-store'});
+      log('PROBE ./data.json ->', b.status);
+    }catch(e){ log('PROBE error:', e); }
+  };
+
+  // Telegram içindeysek UI hazır de
+  if (TG){ try{ TG.ready(); }catch(e){} }
+})();
+</script>
+</body>
+</html>
