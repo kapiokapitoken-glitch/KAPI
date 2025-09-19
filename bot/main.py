@@ -6,9 +6,9 @@ import hmac
 import hashlib
 import time
 from typing import Any, Dict, Optional
-from urllib.parse import parse_qs, parse_qsl, unquote_plus
+from urllib.parse import urlencode, parse_qs, parse_qsl, unquote_plus
 
-from fastapi import FastAPI, Request, HTTPException, status, Header
+from fastapi import FastAPI, Request, HTTPException, status, Header, Depends
 from fastapi.responses import JSONResponse, FileResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -22,15 +22,25 @@ from telegram.ext import Application, CommandHandler, ContextTypes
 # =========================
 # ENV
 # =========================
-TELEGRAM_BOT_TOKEN = os.environ["TELEGRAM_BOT_TOKEN"]  # BotFather token
-DATABASE_URL = (os.environ.get("DATABASE_URL") or "").strip()
-SECRET = (os.environ.get("SECRET") or "").strip()  # (opsiyonel) legacy HMAC fallback için
-PUBLIC_GAME_URL = (os.environ.get("PUBLIC_GAME_URL") or "/").strip()
-GAME_SHORT_NAME = (os.environ.get("GAME_SHORT_NAME") or "kapi_run").strip()
+TELEGRAM_BOT_TOKEN = os.environ["TELEGRAM_BOT_TOKEN"]  # zorunlu
+DATABASE_URL       = (os.environ.get("DATABASE_URL") or "").strip()
+SECRET             = (os.environ.get("SECRET") or "").strip()  # (opsiyonel) legacy imza fallback
+PUBLIC_GAME_URL    = (os.environ.get("PUBLIC_GAME_URL") or "/").strip()
+GAME_SHORT_NAME    = (os.environ.get("GAME_SHORT_NAME") or "kapi_run").strip()
 
 WEBHOOK_PATH = (os.environ.get("WEBHOOK_PATH") or "/tg/webhook").strip()
 if not WEBHOOK_PATH.startswith("/"):
     WEBHOOK_PATH = "/" + WEBHOOK_PATH  # normalize
+
+# --- Admin kontrolü (YENİ) ---
+ADMIN_USER_IDS = set(
+    int(x) for x in (os.environ.get("ADMIN_USER_IDS", "").replace(",", " ").split())
+    if x.isdigit()
+)
+ADMIN_TOKEN = (os.environ.get("ADMIN_TOKEN") or "").strip()
+
+def _is_admin(uid: int) -> bool:
+    return uid in ADMIN_USER_IDS
 
 # =========================
 # FASTAPI
@@ -42,19 +52,9 @@ class NoStoreForStatic(BaseHTTPMiddleware):
     async def dispatch(self, request, call_next):
         response = await call_next(request)
         p = request.url.path or ""
-        if (
-            p.startswith(("/images", "/scripts", "/media", "/icons"))
-            or p
-            in (
-                "/style.css",
-                "/data.json",
-                "/appmanifest.json",
-                "/manifest.json",
-                "/sw.js",
-                "/offline.json",
-                "/index.html",
-                "/webapp-check.html",
-            )
+        if p.startswith(("/images", "/scripts", "/media", "/icons")) or p in (
+            "/style.css", "/data.json", "/appmanifest.json", "/manifest.json",
+            "/sw.js", "/offline.json", "/index.html"
         ):
             response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
             response.headers["Pragma"] = "no-cache"
@@ -124,8 +124,8 @@ async def serve_data_json():
         headers={
             "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
             "Pragma": "no-cache",
-            "Expires": "0",
-        },
+            "Expires": "0"
+        }
     )
 
 @app.get("/appmanifest.json")
@@ -164,23 +164,9 @@ async def serve_offline_json():
         headers={
             "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
             "Pragma": "no-cache",
-            "Expires": "0",
-        },
+            "Expires": "0"
+        }
     )
-
-# --- Self-test page (works from both root and /scripts) ---
-@app.get("/webapp-check.html")
-async def serve_webapp_check_html():
-    p = _first_existing("webapp-check.html")
-    if p:
-        return FileResponse(p, media_type="text/html")
-    raise HTTPException(status_code=404, detail="webapp-check.html not found")
-
-@app.get("/scripts/webapp-check.html")
-@app.get("/scripts/wa-check.html")
-async def serve_webapp_check_html_alias():
-    # Alias: serve the same root file
-    return await serve_webapp_check_html()
 
 # Debug helper (optional)
 @app.get("/debug/ls")
@@ -265,8 +251,87 @@ async def cmd_top(update: Update, context: ContextTypes.DEFAULT_TYPE):
             break
     await msg.reply_text("TOP SCORES\n" + "\n".join(lines))
 
-telegram_app.add_handler(CommandHandler("start", cmd_start))
-telegram_app.add_handler(CommandHandler("top",   cmd_top))
+# --------- Admin Telegram komutları (YENİ) ---------
+async def cmd_resetall(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    msg = update.effective_message
+    user = update.effective_user
+    uid  = int(user.id)
+    if not _is_admin(uid):
+        await msg.reply_text("⛔ Bu komut sadece admin tarafından kullanılabilir.")
+        return
+    if engine is None:
+        await msg.reply_text("Database yapılandırılmamış.")
+        return
+
+    async with engine.connect() as conn:
+        n = (await conn.execute(text("SELECT COUNT(*) FROM scores WHERE best_score > 0"))).scalar() or 0
+
+    args = context.args or []
+    if not (len(args) >= 1 and args[0].upper() == "CONFIRM"):
+        await msg.reply_text(
+            f"Bu işlem TÜM oyuncuların en iyi skorunu 0 yapar.\n"
+            f"Etkilenecek kayıt sayısı: {n}\n\n"
+            f"Onaylamak için: /resetall CONFIRM"
+        )
+        return
+
+    async with engine.begin() as conn:
+        await conn.execute(text("UPDATE scores SET best_score = 0, updated_at = now()"))
+
+    await msg.reply_text(f"✅ Sıfırlama tamamlandı. (~{n} kayıt)")
+
+async def cmd_resetuser(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    msg = update.effective_message
+    user = update.effective_user
+    uid  = int(user.id)
+    if not _is_admin(uid):
+        await msg.reply_text("⛔ Bu komut sadece admin tarafından kullanılabilir.")
+        return
+    if engine is None:
+        await msg.reply_text("Database yapılandırılmamış.")
+        return
+
+    args = context.args or []
+    if not args:
+        await msg.reply_text("Kullanım: /resetuser <user_id | @username | username>")
+        return
+
+    target = args[0].strip()
+    targ_uid: Optional[int] = None
+    targ_uname: Optional[str] = None
+
+    if target.startswith("@"):
+        target = target[1:]
+    if target.isdigit():
+        targ_uid = int(target)
+    else:
+        targ_uname = target
+
+    async with engine.begin() as conn:
+        if targ_uid is not None:
+            res = await conn.execute(text("""
+                UPDATE scores
+                   SET best_score = 0, updated_at = now()
+                 WHERE user_id = :uid
+            """), {"uid": targ_uid})
+            changed = res.rowcount or 0
+        else:
+            res = await conn.execute(text("""
+                UPDATE scores
+                   SET best_score = 0, updated_at = now()
+                 WHERE lower(username) = lower(:uname)
+            """), {"uname": targ_uname})
+            changed = res.rowcount or 0
+
+    if changed > 0:
+        await msg.reply_text(f"✅ {changed} kayıt sıfırlandı.")
+    else:
+        await msg.reply_text("Bulunamadı / zaten 0.")
+
+telegram_app.add_handler(CommandHandler("start",     cmd_start))
+telegram_app.add_handler(CommandHandler("top",       cmd_top))
+telegram_app.add_handler(CommandHandler("resetall",  cmd_resetall))   # YENİ
+telegram_app.add_handler(CommandHandler("resetuser", cmd_resetuser))  # YENİ
 
 # =========================
 # WEBHOOK
@@ -302,7 +367,6 @@ def _hmac_ok(user_id: int, score: int, sig: str) -> bool:
 def _check_webapp_initdata(init_data: str, bot_token: str) -> bool:
     """
     Telegram WebApp initData doğrulaması (bot token ile).
-
     Kural: data_check_string = 'hash' HARİÇ TÜM parametreler (signature DAHİL),
     alfabetik sırada key=value ve '\\n' ile birleştirilir.
     secret = HMAC_SHA256(key=b"WebAppData", msg=bot_token)
@@ -321,7 +385,7 @@ def _check_webapp_initdata(init_data: str, bot_token: str) -> bool:
             if k == "hash":
                 hash_val = v
             else:
-                # ÖNEMLİ: 'signature' dahil, sadece 'hash' hariç tutulur
+                # ÖNEMLİ: 'signature' dahil, sadece 'hash' hariç
                 pairs.append((k, v))
 
         if not hash_val:
@@ -344,14 +408,14 @@ def _check_webapp_initdata(init_data: str, bot_token: str) -> bool:
 @app.post("/api/score")
 async def post_score(
     request: Request,
-    x_telegram_init_data: Optional[str] = Header(default=None),
+    x_telegram_init_data: Optional[str] = Header(default=None)
 ):
     """
     Skor kaydı:
-      - Öncelik: Telegram WebApp initData imzası (header: X-Telegram-Init-Data veya body.init_data)
+      - Öncelik: Telegram WebApp initData (header: X-Telegram-Init-Data veya body.init_data)
       - Fallback: Legacy SECRET HMAC (user_id:score -> sig)
     """
-    # Body'yi güvenle al
+    # Body
     try:
         body = await request.json()
         if not isinstance(body, dict):
@@ -372,7 +436,6 @@ async def post_score(
     username: Optional[str] = None
 
     if init_data and _check_webapp_initdata(init_data, TELEGRAM_BOT_TOKEN):
-        # init_data içinden kullanıcıyı çıkar
         params = parse_qs(init_data, keep_blank_values=True)
         user_json = params.get("user", [None])[0]
         if user_json:
@@ -383,7 +446,7 @@ async def post_score(
             except Exception:
                 pass
     else:
-        # 2) Legacy HMAC fallback (eski client'lar için)
+        # 2) Legacy HMAC fallback
         if all(k in body for k in ("user_id", "score", "sig")):
             try:
                 uid = int(body.get("user_id"))
@@ -395,7 +458,6 @@ async def post_score(
                 pass
 
     if user_id is None:
-        # Ne WebApp imzası geçti ne de legacy imza
         raise HTTPException(status_code=401, detail="invalid signature")
 
     if engine is None:
@@ -404,17 +466,15 @@ async def post_score(
     # DB upsert
     async with engine.begin() as conn:
         await conn.execute(
-            text(
-                """
+            text("""
                 INSERT INTO scores (user_id, username, best_score)
                 VALUES (:uid, :uname, :s)
                 ON CONFLICT (user_id) DO UPDATE
                 SET username   = EXCLUDED.username,
                     best_score = GREATEST(scores.best_score, EXCLUDED.best_score),
                     updated_at = now();
-                """
-            ),
-            {"uid": user_id, "uname": username, "s": score_val},
+            """),
+            {"uid": user_id, "uname": username, "s": score_val}
         )
 
     return {"ok": True, "saved": True, "user_id": user_id, "username": username, "score": score_val}
@@ -425,19 +485,54 @@ async def leaderboard(limit: int = 200):
         raise HTTPException(status_code=500, detail="database not configured")
     limit = max(1, min(200, int(limit)))
     async with engine.connect() as conn:
-        res = await conn.execute(
-            text(
-                """
+        res = await conn.execute(text("""
             SELECT user_id, username, best_score, updated_at
             FROM scores
             ORDER BY best_score DESC, updated_at ASC
             LIMIT :lim
-        """
-            ),
-            {"lim": limit},
-        )
+        """), {"lim": limit})
         rows = [dict(r._mapping) for r in res]
     return rows
+
+# =========================
+# (YENİ) Admin REST endpoints
+# =========================
+def _require_admin_token(x_admin_token: Optional[str] = Header(default=None)) -> None:
+    if not ADMIN_TOKEN or x_admin_token != ADMIN_TOKEN:
+        raise HTTPException(status_code=403, detail="forbidden")
+
+@app.post("/api/admin/reset_all")
+async def api_admin_reset_all(dep: None = Depends(_require_admin_token)):
+    if engine is None:
+        raise HTTPException(status_code=500, detail="database not configured")
+    async with engine.begin() as conn:
+        n = (await conn.execute(text("SELECT COUNT(*) FROM scores WHERE best_score > 0"))).scalar() or 0
+        await conn.execute(text("UPDATE scores SET best_score = 0, updated_at = now()"))
+    return {"ok": True, "affected_estimate": n}
+
+@app.post("/api/admin/reset_user")
+async def api_admin_reset_user(payload: Dict[str, Any], dep: None = Depends(_require_admin_token)):
+    if engine is None:
+        raise HTTPException(status_code=500, detail="database not configured")
+    uid = payload.get("user_id")
+    uname = payload.get("username")
+    if not uid and not uname:
+        raise HTTPException(status_code=400, detail="need user_id or username")
+
+    async with engine.begin() as conn:
+        if uid:
+            res = await conn.execute(text("""
+                UPDATE scores SET best_score = 0, updated_at = now()
+                WHERE user_id = :uid
+            """), {"uid": int(uid)})
+        else:
+            res = await conn.execute(text("""
+                UPDATE scores SET best_score = 0, updated_at = now()
+                WHERE lower(username) = lower(:uname)
+            """), {"uname": str(uname)})
+        changed = res.rowcount or 0
+
+    return {"ok": True, "changed": changed}
 
 # =========================
 # LIFECYCLE
