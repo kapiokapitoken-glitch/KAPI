@@ -16,13 +16,13 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncEngine
 from sqlalchemy import text
 
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, ContextTypes
 
 # =========================
 # ENV
 # =========================
-TELEGRAM_BOT_TOKEN = os.environ["TELEGRAM_BOT_TOKEN"]  # BotFather token (env zorunlu)
+TELEGRAM_BOT_TOKEN = os.environ["TELEGRAM_BOT_TOKEN"]  # BotFather token
 DATABASE_URL = (os.environ.get("DATABASE_URL") or "").strip()
 SECRET = (os.environ.get("SECRET") or "").strip()  # (opsiyonel) legacy HMAC fallback için
 PUBLIC_GAME_URL = (os.environ.get("PUBLIC_GAME_URL") or "/").strip()
@@ -42,9 +42,19 @@ class NoStoreForStatic(BaseHTTPMiddleware):
     async def dispatch(self, request, call_next):
         response = await call_next(request)
         p = request.url.path or ""
-        if p.startswith(("/images", "/scripts", "/media", "/icons")) or p in (
-            "/style.css", "/data.json", "/appmanifest.json", "/manifest.json",
-            "/sw.js", "/offline.json", "/index.html", "/webapp-check.html"
+        if (
+            p.startswith(("/images", "/scripts", "/media", "/icons"))
+            or p
+            in (
+                "/style.css",
+                "/data.json",
+                "/appmanifest.json",
+                "/manifest.json",
+                "/sw.js",
+                "/offline.json",
+                "/index.html",
+                "/webapp-check.html",
+            )
         ):
             response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
             response.headers["Pragma"] = "no-cache"
@@ -71,6 +81,14 @@ async def health() -> Dict[str, Any]:
 async def list_routes():
     return [{"path": r.path, "methods": list(getattr(r, "methods", []))} for r in app.routes]
 
+@app.get("/")
+async def serve_index():
+    index_path = os.path.join(os.getcwd(), "index.html")
+    if os.path.isfile(index_path):
+        return FileResponse(index_path, media_type="text/html")
+    return JSONResponse({"ok": True, "hint": "index.html not found"}, status_code=200)
+
+# ---------- Root-level game files ----------
 def _first_existing(filename: str, fallback: bool = True):
     # 1) CWD (project root on DO)
     p1 = os.path.join(os.getcwd(), filename)
@@ -83,20 +101,6 @@ def _first_existing(filename: str, fallback: bool = True):
         if os.path.isfile(p2):
             return p2
     return None
-
-@app.get("/")
-async def serve_index():
-    p = _first_existing("index.html")
-    if p:
-        return FileResponse(p, media_type="text/html")
-    return JSONResponse({"ok": True, "hint": "index.html not found"}, status_code=200)
-
-@app.get("/webapp-check.html")
-async def serve_webapp_check():
-    p = _first_existing("webapp-check.html")
-    if p:
-        return FileResponse(p, media_type="text/html")
-    raise HTTPException(status_code=404, detail="webapp-check.html not found")
 
 @app.get("/style.css")
 async def serve_style_css():
@@ -113,14 +117,15 @@ async def serve_data_json():
     p = _first_existing("data.json")
     if not p:
         raise HTTPException(status_code=404, detail="data.json not found")
+
     return FileResponse(
         p,
         media_type="application/json",
         headers={
             "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
             "Pragma": "no-cache",
-            "Expires": "0"
-        }
+            "Expires": "0",
+        },
     )
 
 @app.get("/appmanifest.json")
@@ -146,18 +151,36 @@ async def serve_service_worker():
 
 @app.get("/offline.json")
 async def serve_offline_json():
+    """
+    offline.json'u kökten servis eder ve agresif cache'i engeller.
+    """
     p = _first_existing("offline.json")
     if not p:
         raise HTTPException(status_code=404, detail="offline.json not found")
+
     return FileResponse(
         p,
         media_type="application/json",
         headers={
             "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
             "Pragma": "no-cache",
-            "Expires": "0"
-        }
+            "Expires": "0",
+        },
     )
+
+# --- Self-test page (works from both root and /scripts) ---
+@app.get("/webapp-check.html")
+async def serve_webapp_check_html():
+    p = _first_existing("webapp-check.html")
+    if p:
+        return FileResponse(p, media_type="text/html")
+    raise HTTPException(status_code=404, detail="webapp-check.html not found")
+
+@app.get("/scripts/webapp-check.html")
+@app.get("/scripts/wa-check.html")
+async def serve_webapp_check_html_alias():
+    # Alias: serve the same root file
+    return await serve_webapp_check_html()
 
 # Debug helper (optional)
 @app.get("/debug/ls")
@@ -207,11 +230,11 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = update.message or update.effective_message
     if not msg:
         return
-    # Telegram içinde WebApp olarak aç (initData gelmesi için 'web_app' kullan)
+    # Telegram cache-bust için URL’ye ?v=timestamp parametresi ekle
     v = str(int(time.time()))
     sep = "&" if "?" in PUBLIC_GAME_URL else "?"
     url = f"{PUBLIC_GAME_URL}{sep}v={v}"
-    kb = [[InlineKeyboardButton("Play the Game", web_app=WebAppInfo(url=url))]]
+    kb = [[InlineKeyboardButton("Play the Game", url=url)]]
     await msg.reply_text("Welcome to KAPI RUN!", reply_markup=InlineKeyboardMarkup(kb))
 
 async def cmd_top(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -279,8 +302,9 @@ def _hmac_ok(user_id: int, score: int, sig: str) -> bool:
 def _check_webapp_initdata(init_data: str, bot_token: str) -> bool:
     """
     Telegram WebApp initData doğrulaması (bot token ile).
+
     Kural: data_check_string = 'hash' HARİÇ TÜM parametreler (signature DAHİL),
-    alfabetik sırada key=value ve '\n' ile birleştirilir.
+    alfabetik sırada key=value ve '\\n' ile birleştirilir.
     secret = HMAC_SHA256(key=b"WebAppData", msg=bot_token)
     calc   = HMAC_SHA256(key=secret, msg=data_check_string).hexdigest()
     """
@@ -297,7 +321,7 @@ def _check_webapp_initdata(init_data: str, bot_token: str) -> bool:
             if k == "hash":
                 hash_val = v
             else:
-                # ÖNEMLİ: 'signature' dahildir; sadece 'hash' hariç tutulur
+                # ÖNEMLİ: 'signature' dahil, sadece 'hash' hariç tutulur
                 pairs.append((k, v))
 
         if not hash_val:
@@ -320,7 +344,7 @@ def _check_webapp_initdata(init_data: str, bot_token: str) -> bool:
 @app.post("/api/score")
 async def post_score(
     request: Request,
-    x_telegram_init_data: Optional[str] = Header(default=None)
+    x_telegram_init_data: Optional[str] = Header(default=None),
 ):
     """
     Skor kaydı:
@@ -380,15 +404,17 @@ async def post_score(
     # DB upsert
     async with engine.begin() as conn:
         await conn.execute(
-            text("""
+            text(
+                """
                 INSERT INTO scores (user_id, username, best_score)
                 VALUES (:uid, :uname, :s)
                 ON CONFLICT (user_id) DO UPDATE
                 SET username   = EXCLUDED.username,
                     best_score = GREATEST(scores.best_score, EXCLUDED.best_score),
                     updated_at = now();
-            """),
-            {"uid": user_id, "uname": username, "s": score_val}
+                """
+            ),
+            {"uid": user_id, "uname": username, "s": score_val},
         )
 
     return {"ok": True, "saved": True, "user_id": user_id, "username": username, "score": score_val}
@@ -399,12 +425,17 @@ async def leaderboard(limit: int = 200):
         raise HTTPException(status_code=500, detail="database not configured")
     limit = max(1, min(200, int(limit)))
     async with engine.connect() as conn:
-        res = await conn.execute(text("""
+        res = await conn.execute(
+            text(
+                """
             SELECT user_id, username, best_score, updated_at
             FROM scores
             ORDER BY best_score DESC, updated_at ASC
             LIMIT :lim
-        """), {"lim": limit})
+        """
+            ),
+            {"lim": limit},
+        )
         rows = [dict(r._mapping) for r in res]
     return rows
 
