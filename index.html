@@ -1,5 +1,5 @@
 ﻿<!doctype html>
-<html lang="tr">
+<html lang="en">
 <head>
   <meta charset="utf-8" />
   <title>KAPI RUN</title>
@@ -7,7 +7,7 @@
   <meta name="description" content="KAPI RUN Game" />
   <meta name="author" content="Okapi Team" />
 
-  <!-- Manifest & iconlar -->
+  <!-- Manifest & icons -->
   <link rel="manifest" href="./appmanifest.json?v=20250917zz" />
   <link rel="apple-touch-icon" sizes="128x128" href="./icons/icon-128.png" />
   <link rel="apple-touch-icon" sizes="256x256" href="./icons/icon-256.png" />
@@ -15,7 +15,7 @@
   <link rel="stylesheet" href="./style.css?v=20250917zz" />
 
   <style>
-    /* Masaüstünde gösterilecek uyarı için basit stil */
+    /* Simple style for desktop warning */
     #deviceBlock{
       display:none; position:fixed; inset:0; background:#0b0b0b; color:#fff;
       align-items:center; justify-content:center; text-align:center; padding:24px; z-index:99999;
@@ -35,24 +35,24 @@
 
   <noscript>
     <div id="notSupportedWrap">
-      <h2>Bu içerik JavaScript gerektirir</h2>
-      <p class="notSupportedMessage">Devam etmek için JavaScript’i etkinleştirin.</p>
+      <h2>This content requires JavaScript</h2>
+      <p class="notSupportedMessage">Please enable JavaScript to continue.</p>
     </div>
   </noscript>
 
-  <!-- Masaüstü/uygunsuz ortam uyarısı -->
+  <!-- Desktop/unsupported environment warning -->
   <div id="deviceBlock">
     <div class="card">
-      <h2>Mobilde Oynayın</h2>
-      <p>Bu oyun Telegram uygulaması içinde <b>iOS</b> veya <b>Android</b> cihazlarda çalışır.</p>
-      <p>Telegram’ın <b>mobil</b> uygulamasından botun menüsündeki <b>KAPI RUN</b> düğmesine dokunun.</p>
+      <h2>Play on Mobile</h2>
+      <p>This game works only inside the Telegram app on <b>iOS</b> or <b>Android</b> devices.</p>
+      <p>Open Telegram on your <b>mobile</b> and tap the <b>KAPI RUN</b> button in the bot menu to start.</p>
       <p style="opacity:.8; font-size:13px; margin-top:10px">
-        (Masaüstü/Browser’dan açtığınız için oyun yüklenmedi.)
+        (Not available when opened from desktop/browser.)
       </p>
     </div>
   </div>
 
-  <!-- iOS: ilk dokunuşta AudioContext kilidini aç -->
+  <!-- iOS: unlock AudioContext on first touch -->
   <script>
     document.addEventListener("touchstart", function () {
       try {
@@ -65,7 +65,7 @@
     }, { once: true });
   </script>
 
-  <!-- Geliştirme sırasında SW ve cache'i kapat (üretimde istersen kaldır) -->
+  <!-- During development, disable SW and cache (remove in production if desired) -->
   <script>
     (function () {
       if ("serviceWorker" in navigator) {
@@ -79,32 +79,32 @@
     })();
   </script>
 
-  <!-- C3 ayarları -->
+  <!-- C3 settings -->
   <script>
     (function(){
-      const V = "20250917zz";                  // versiyon etiketi
+      const V = "20250917zz";                  // version tag
       window.C3_NO_WORKER = true;
       window.C3_IsSupported = true;
       window.C3_ProjectDataUrl = "data.json?v=" + V;
       window["C3_ProjectDataUrl"] = "data.json?v=" + V;
-      window.__KAPI_VERSION__ = V;             // istersen başka yerlerde kullan
+      window.__KAPI_VERSION__ = V;             // custom version marker
     })();
   </script>
 
   <!-- Telegram WebApp SDK -->
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
 
-  <!-- Skor köprüsü (submitScore) -->
+  <!-- Score bridge (submitScore) -->
   <script src="./scripts/tg-bridge.js?v=20250917zz"></script>
 
-  <!-- Mobil/Telegram kontrolü ve koşullu C3 yükleme -->
+  <!-- Mobile/Telegram check and conditional C3 loading -->
   <script>
     (function(){
       const V = window.__KAPI_VERSION__ || "20250917zz";
       const TG = (window.Telegram && window.Telegram.WebApp) ? window.Telegram.WebApp : null;
 
       function allowRun(){
-        if (!TG) return false;                             // Telegram WebApp dışında açılmış
+        if (!TG) return false;                             // Opened outside Telegram WebApp
         const p = (TG.platform || "").toLowerCase();       // 'ios' | 'android' | 'tdesktop' | 'macos' | 'web'
         return p === "ios" || p === "android";
       }
