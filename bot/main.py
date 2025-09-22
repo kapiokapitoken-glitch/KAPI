@@ -60,9 +60,9 @@ class NoStoreForStatic(BaseHTTPMiddleware):
             "/style.css", "/data.json", "/appmanifest.json", "/manifest.json",
             "/sw.js", "/offline.json", "/index.html"
         ):
-            response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
-            response.headers["Pragma"] = "no-cache"
-            response.headers["Expires"] = "0"
+                response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+                response.headers["Pragma"] = "no-cache"
+                response.headers["Expires"] = "0"
         return response
 
 app.add_middleware(NoStoreForStatic)
@@ -228,11 +228,13 @@ def _is_owner(update: Update) -> bool:
 START_TEXT = (
     "🧣 OKAPI TOKEN MINI MOBILE GAME 🕹️\n\n"
     "Tap the *KAPI RUN* button in the menu to start the game.\n"
-    "Run with Kapi 🦌 and overcome scary obstacles.\n"
+    "Run with Kapi and overcome scary obstacles.\n"
     "Collect red scarves 🧣 to increase your score.\n"
     "When Kapi gets scared 😱 he may perform a second jump (temporary and unpredictable).\n"
     "Your best score is saved automatically 🏆\n"
     "Use /top to view the leaderboard.\n"
+    "📱 *Mobile only:* play inside the Telegram app on iOS/Android. "
+    "If opened on desktop, use the mobile app and tap *KAPI RUN*.\n"
     "For detailed info use /info ℹ️"
 )
 
@@ -285,7 +287,7 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         print("set_chat_menu_button error:", e, file=sys.stderr)
 
-    # Send English-only start info (no inline buttons)
+    # Send start info (English)
     await msg.reply_text(START_TEXT, parse_mode="Markdown")
 
 async def cmd_info(update: Update, context: ContextTypes.DEFAULT_TYPE):
