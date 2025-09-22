@@ -233,7 +233,7 @@ START_TEXT = (
     "When Kapi gets scared 😱 he may perform a second jump (temporary and unpredictable).\n"
     "Your best score is saved automatically 🏆\n"
     "Use /top to view the leaderboard.\n"
-    "📱 *Mobile only:* play inside the Telegram app on iOS/Android./n"
+    "📱 *Mobile only:* play inside the Telegram app on iOS/Android.\n"
     "For detailed info use /info ℹ️"
 )
 
