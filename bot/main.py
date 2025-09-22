@@ -20,8 +20,8 @@ from telegram import (
     Update,
     InlineKeyboardButton,
     InlineKeyboardMarkup,
-    MenuButtonWebApp,      # <-- eklendi
-    WebAppInfo             # <-- eklendi
+    MenuButtonWebApp,   # for the blue menu button
+    WebAppInfo
 )
 from telegram.ext import (
     Application,
@@ -34,9 +34,9 @@ from telegram.ext import (
 # =========================
 # ENV
 # =========================
-TELEGRAM_BOT_TOKEN = os.environ["TELEGRAM_BOT_TOKEN"]  # zorunlu
+TELEGRAM_BOT_TOKEN = os.environ["TELEGRAM_BOT_TOKEN"]
 DATABASE_URL = (os.environ.get("DATABASE_URL") or "").strip()
-SECRET = (os.environ.get("SECRET") or "").strip()  # eski client HMAC fallback (opsiyonel)
+SECRET = (os.environ.get("SECRET") or "").strip()  # legacy client HMAC fallback (optional)
 PUBLIC_GAME_URL = (os.environ.get("PUBLIC_GAME_URL") or "/").strip()
 GAME_SHORT_NAME = (os.environ.get("GAME_SHORT_NAME") or "kapi_run").strip()
 
@@ -44,16 +44,16 @@ WEBHOOK_PATH = (os.environ.get("WEBHOOK_PATH") or "/tg/webhook").strip()
 if not WEBHOOK_PATH.startswith("/"):
     WEBHOOK_PATH = "/" + WEBHOOK_PATH  # normalize
 
-# Admin env'leri:
-ADMIN_OWNER_ID = int(os.environ.get("ADMIN_OWNER_ID", "1375167714"))  # bot sahibi (sen)
-SECRET_ADMIN = (os.environ.get("SECRET_ADMIN") or "").strip()         # örn: 401208Ak.
+# Admin env
+ADMIN_OWNER_ID = int(os.environ.get("ADMIN_OWNER_ID", "1375167714"))
+SECRET_ADMIN = (os.environ.get("SECRET_ADMIN") or "").strip()
 
 # =========================
 # FASTAPI
 # =========================
 app = FastAPI(title="KAPI RUN - Bot & API")
 
-# ---- Static için cache kapatma ----
+# Disable cache for static files
 class NoStoreForStatic(BaseHTTPMiddleware):
     async def dispatch(self, request, call_next):
         response = await call_next(request)
@@ -69,7 +69,7 @@ class NoStoreForStatic(BaseHTTPMiddleware):
 
 app.add_middleware(NoStoreForStatic)
 
-# Statik klasörleri mount et
+# Mount static folders if present
 if os.path.isdir("images"):
     app.mount("/images", StaticFiles(directory="images"), name="images")
 if os.path.isdir("scripts"):
@@ -100,7 +100,7 @@ def _first_existing(filename: str, fallback: bool = True):
     p1 = os.path.join(os.getcwd(), filename)
     if os.path.isfile(p1):
         return p1
-    # 2) bot/.. (repo root)
+    # 2) repo root (bot/..)
     if fallback:
         base = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
         p2 = os.path.join(base, filename)
@@ -166,7 +166,7 @@ async def serve_offline_json():
         },
     )
 
-# Self-test sayfası (iki alias)
+# Self-test page (two aliases)
 @app.get("/webapp-check.html")
 async def serve_webapp_check_html():
     p = _first_existing("webapp-check.html")
@@ -226,36 +226,76 @@ def _is_owner(update: Update) -> bool:
     u = update.effective_user
     return bool(u and u.id == ADMIN_OWNER_ID)
 
+# ---------- User-visible texts (English only) ----------
+START_TEXT = (
+    "🧣 *OKAPI TOKEN*\n\n"
+    "▶️ Tap *PLAY* in the menu below to open the game.\n"
+    "🏃 Run with Kapi and overcome obstacles.\n"
+    "🧣 Collect *red scarves* to increase your score.\n"
+    "⚠️ When Kapi gets scared, he may perform a *second jump* — this effect is temporary and unpredictable.\n"
+    "🏆 Your best score is saved automatically. Use /top to see the global leaderboard."
+)
+
+HELP_TEXT = (
+    "🎮 *How to Play*\n\n"
+    "*Welcome to the OKAPI TOKEN world!* Kapi keeps running forward on a hazardous path. "
+    "Your goal is to *overcome obstacles with Kapi* and set the highest score.\n\n"
+    "1) *Start*\n"
+    "- Tap *PLAY* in the bot's menu to open the game.\n"
+    "- Kapi starts running automatically; you help him clear the way by jumping at the right time.\n\n"
+    "2) *Obstacles & Hazards*\n"
+    "- Beware of zombies, creatures, and flying birds.\n"
+    "- Avoid rocks, pits, and broken ground. Any collision ends the run.\n\n"
+    "3) *Controls (Jumping)*\n"
+    "- Tap the screen to make Kapi *jump*.\n"
+    "- Timing is critical; jumping too early or too late leads to a hit.\n"
+    "- When Kapi gets *scared*, he may perform a *second jump* — this effect is *temporary and unpredictable*.\n\n"
+    "4) *Collectibles*\n"
+    "- Collect *red scarves* along the way to increase your score.\n\n"
+    "5) *Scoring & Difficulty*\n"
+    "- Score increases with *distance* and *red scarves* collected.\n"
+    "- The longer you survive, the faster and harder it gets.\n\n"
+    "6) *Leaderboard*\n"
+    "- Your best score is saved automatically.\n"
+    "- Use */top* to see the global leaderboard.\n\n"
+    "7) *Tips*\n"
+    "- Stay calm; avoid unnecessary jumps.\n"
+    "- Focus on jump *timing*.\n"
+    "- Push for long runs, collect red scarves, and climb the leaderboard! 🏆"
+)
+
+# ---------- Commands ----------
 async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = update.message or update.effective_message
     if not msg:
         return
 
-    # --- Menü butonunu (mavi bar) PLAY olarak ayarla ---
+    # Set the blue menu button label to PLAY (WebApp)
     try:
         await context.bot.set_chat_menu_button(
             menu_button=MenuButtonWebApp(
                 text="PLAY",
-                web_app=WebAppInfo(url=PUBLIC_GAME_URL)  # menü için cache-bust gerekmez
+                web_app=WebAppInfo(url=PUBLIC_GAME_URL)  # no cache-bust needed for menu
             )
         )
     except Exception as e:
-        # sessiz geç; gerekirse loglayabilirsin
         print("set_chat_menu_button error:", e, file=sys.stderr)
 
-    # Cache-bust'lı inline link (mevcut davranışı koruyorum)
-    v = str(int(time.time()))
-    sep = "&" if "?" in PUBLIC_GAME_URL else "?"
-    url = f"{PUBLIC_GAME_URL}{sep}v={v}"
-    kb = [[InlineKeyboardButton("Play the Game", url=url)]]
-    await msg.reply_text("Welcome to KAPI RUN!", reply_markup=InlineKeyboardMarkup(kb))
+    # Send English-only start info (no inline buttons)
+    await msg.reply_text(START_TEXT, parse_mode="Markdown")
+
+async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    msg = update.message or update.effective_message
+    if not msg:
+        return
+    await msg.reply_text(HELP_TEXT, parse_mode="Markdown")
 
 async def cmd_top(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = update.message or update.effective_message
     if not msg:
         return
     if engine is None:
-        await msg.reply_text("Leaderboard is not available (DB not configured).")
+        await msg.reply_text("Leaderboard is not available (database not configured).")
         return
     async with engine.connect() as conn:
         res = await conn.execute(text("""
@@ -276,9 +316,9 @@ async def cmd_top(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if len("\n".join(lines)) > 3500:
             lines.append("...")
             break
-    await msg.reply_text("TOP SCORES\n" + "\n".join(lines))
+    await msg.reply_text("🏆 Global Leaderboard\n" + "\n".join(lines))
 
-# ---- Admin debug & komutları ----
+# ---- Admin/debug commands (English responses) ----
 async def cmd_whoami(update: Update, context: ContextTypes.DEFAULT_TYPE):
     u = update.effective_user
     await (update.effective_message or update.message).reply_text(
@@ -310,7 +350,7 @@ async def cmd_admin_reset_user(update: Update, context: ContextTypes.DEFAULT_TYP
     uid = None
     if target.startswith("@"):
         if engine is None:
-            return await msg.reply_text("db not configured")
+            return await msg.reply_text("database not configured")
         async with engine.connect() as conn:
             res = await conn.execute(text("SELECT user_id FROM scores WHERE username = :u"), {"u": target[1:]})
             row = res.first()
@@ -325,7 +365,7 @@ async def cmd_admin_reset_user(update: Update, context: ContextTypes.DEFAULT_TYP
             return await msg.reply_text("invalid user_id")
 
     if engine is None:
-        return await msg.reply_text("db not configured")
+        return await msg.reply_text("database not configured")
 
     async with engine.begin() as conn:
         res = await conn.execute(
@@ -351,7 +391,6 @@ async def cmd_admin_reset_all(update: Update, context: ContextTypes.DEFAULT_TYPE
     return await msg.reply_text("Type YES to confirm reset all")
 
 async def _confirm_reset_all(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    # owner "YES" derse tümünü sıfırla
     msg = update.effective_message or update.message
     if not _is_owner(update):
         return
@@ -363,15 +402,16 @@ async def _confirm_reset_all(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
     context.user_data["__awaiting_reset_all"] = False
     if engine is None:
-        return await msg.reply_text("db not configured")
+        return await msg.reply_text("database not configured")
 
     async with engine.begin() as conn:
         await conn.execute(text("UPDATE scores SET best_score = 0, updated_at = now()"))
 
     await msg.reply_text("all reset")
 
-# Handler kayıtları
+# Register handlers
 telegram_app.add_handler(CommandHandler("start",            cmd_start))
+telegram_app.add_handler(CommandHandler("help",             cmd_help))
 telegram_app.add_handler(CommandHandler("top",              cmd_top))
 telegram_app.add_handler(CommandHandler("whoami",           cmd_whoami))
 telegram_app.add_handler(CommandHandler("admin_test",       cmd_admin_test))
@@ -392,7 +432,6 @@ async def telegram_webhook(request: Request):
         body = await request.body()
         print("WEBHOOK parse error:", body[:500], file=sys.stderr)
         return JSONResponse({"ok": False, "error": "invalid json"}, status_code=400)
-    # Log kısalt
     try:
         print("WEBHOOK update:", json.dumps(data)[:500], file=sys.stderr)
     except Exception:
@@ -405,9 +444,7 @@ async def telegram_webhook(request: Request):
 # SIGNATURE HELPERS
 # =========================
 def _hmac_ok(user_id: int, score: int, sig: str) -> bool:
-    """
-    Legacy imza (SECRET ile) fallback.
-    """
+    """Legacy HMAC (SECRET) fallback."""
     if not SECRET:
         return False
     msg = f"{user_id}:{score}".encode("utf-8")
@@ -416,9 +453,8 @@ def _hmac_ok(user_id: int, score: int, sig: str) -> bool:
 
 def _check_webapp_initdata(init_data: str, bot_token: str) -> bool:
     """
-    Telegram WebApp initData doğrulaması.
-    - data_check_string = 'hash' HARİÇ tüm parametreler (signature DAHİL),
-      alfabetik sıraya göre "key=value", aralara '\n'
+    Telegram WebApp initData verification.
+    - data_check_string: ALL params except 'hash' (INCLUDING 'signature'), sorted as 'key=value' joined with '\n'
     - secret = HMAC_SHA256(key=b"WebAppData", msg=bot_token)
     - calc   = HMAC_SHA256(key=secret, msg=data_check_string).hexdigest()
     """
@@ -435,7 +471,6 @@ def _check_webapp_initdata(init_data: str, bot_token: str) -> bool:
             if k == "hash":
                 hash_val = v
             else:
-                # 'signature' DAHİL, sadece 'hash' hariç
                 pairs.append((k, v))
 
         if not hash_val:
@@ -461,11 +496,11 @@ async def post_score(
     x_telegram_init_data: Optional[str] = Header(default=None)
 ):
     """
-    Skor kaydı:
-      - Öncelik: Telegram WebApp initData (header: X-Telegram-Init-Data veya body.init_data)
+    Score submit:
+      - Preferred: Telegram WebApp initData (header X-Telegram-Init-Data or body.init_data)
       - Fallback: Legacy SECRET HMAC (user_id:score -> sig)
     """
-    # Body al
+    # Body
     try:
         body = await request.json()
         if not isinstance(body, dict):
@@ -473,14 +508,14 @@ async def post_score(
     except Exception:
         body = {}
 
-    # Skor
+    # Score
     try:
         score_val = int(body.get("score", 0))
     except Exception:
         score_val = 0
     score_val = max(0, score_val)
 
-    # 1) WebApp initData doğrulaması
+    # 1) WebApp initData
     init_data = (x_telegram_init_data or body.get("init_data") or "").strip()
     user_id: Optional[int] = None
     username: Optional[str] = None
