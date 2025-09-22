@@ -18,9 +18,7 @@ from sqlalchemy import text
 
 from telegram import (
     Update,
-    InlineKeyboardButton,
-    InlineKeyboardMarkup,
-    MenuButtonWebApp,   # for the blue menu button
+    MenuButtonWebApp,   # menu button (blue bar)
     WebAppInfo
 )
 from telegram.ext import (
@@ -226,42 +224,48 @@ def _is_owner(update: Update) -> bool:
     u = update.effective_user
     return bool(u and u.id == ADMIN_OWNER_ID)
 
-# ---------- User-visible texts (English only) ----------
+# ---------- User-visible texts ----------
 START_TEXT = (
-    "🧣 *OKAPI TOKEN*\n\n"
-    "▶️ Tap *PLAY* in the menu below to open the game.\n"
-    "🏃 Run with Kapi and overcome obstacles.\n"
-    "🧣 Collect *red scarves* to increase your score.\n"
-    "⚠️ When Kapi gets scared, he may perform a *second jump* — this effect is temporary and unpredictable.\n"
-    "🏆 Your best score is saved automatically. Use /top to see the global leaderboard."
+    "🧣 OKAPI TOKEN MINI MOBILE GAME 🕹️\n\n"
+    "Tap the *KAPI RUN* button in the menu to start the game.\n"
+    "Run with Kapi 🦌 and overcome scary obstacles.\n"
+    "Collect red scarves 🧣 to increase your score.\n"
+    "When Kapi gets scared 😱 he may perform a second jump (temporary and unpredictable).\n"
+    "Your best score is saved automatically 🏆\n"
+    "Use /top to view the leaderboard.\n"
+    "For detailed info use /info ℹ️"
 )
 
-HELP_TEXT = (
-    "🎮 *How to Play*\n\n"
-    "*Welcome to the OKAPI TOKEN world!* Kapi keeps running forward on a hazardous path. "
-    "Your goal is to *overcome obstacles with Kapi* and set the highest score.\n\n"
-    "1) *Start*\n"
-    "- Tap *PLAY* in the bot's menu to open the game.\n"
-    "- Kapi starts running automatically; you help him clear the way by jumping at the right time.\n\n"
-    "2) *Obstacles & Hazards*\n"
-    "- Beware of zombies, creatures, and flying birds.\n"
-    "- Avoid rocks, pits, and broken ground. Any collision ends the run.\n\n"
-    "3) *Controls (Jumping)*\n"
-    "- Tap the screen to make Kapi *jump*.\n"
-    "- Timing is critical; jumping too early or too late leads to a hit.\n"
-    "- When Kapi gets *scared*, he may perform a *second jump* — this effect is *temporary and unpredictable*.\n\n"
-    "4) *Collectibles*\n"
-    "- Collect *red scarves* along the way to increase your score.\n\n"
-    "5) *Scoring & Difficulty*\n"
-    "- Score increases with *distance* and *red scarves* collected.\n"
-    "- The longer you survive, the faster and harder it gets.\n\n"
-    "6) *Leaderboard*\n"
-    "- Your best score is saved automatically.\n"
-    "- Use */top* to see the global leaderboard.\n\n"
-    "7) *Tips*\n"
-    "- Stay calm; avoid unnecessary jumps.\n"
-    "- Focus on jump *timing*.\n"
-    "- Push for long runs, collect red scarves, and climb the leaderboard! 🏆"
+INFO_TEXT = (
+    "🎮 Detailed Gameplay Guide\n\n"
+    "Welcome to the OKAPI TOKEN world! Our hero Kapi keeps running on a path full of obstacles. "
+    "Your goal is to overcome obstacles with Kapi and achieve the highest score.\n\n"
+    "1) Start\n"
+    "• Tap the *KAPI RUN* label in the chat menu to open the game.\n"
+    "• Kapi starts running automatically; you try to overcome obstacles with him.\n\n"
+    "2) Obstacles & Hazards\n"
+    "• Scary hazards appear: zombies, creatures, and flying birds.\n"
+    "• Stay away from rocks, pits, or broken ground.\n"
+    "• Any collision ends the run.\n\n"
+    "3) Controls (Jumping)\n"
+    "• Tap the screen → Kapi jumps.\n"
+    "• Timing is critical: too early or too late means you won’t avoid the obstacle.\n"
+    "• When Kapi gets scared, he may jump twice — this effect is temporary and unpredictable.\n\n"
+    "4) Collectibles\n"
+    "• Red scarves appear on the path. Collect them to increase your score.\n\n"
+    "5) Scoring & Difficulty\n"
+    "• Your score increases by the distance you run and the total number of red scarves.\n"
+    "• The longer you survive, the faster and harder it gets.\n\n"
+    "6) Kapi’s Role\n"
+    "• Kapi is the hero you control. He runs, avoids obstacles, and may perform extra jumps when scared.\n"
+    "• Keeping him safe is up to you!\n\n"
+    "7) Leaderboard\n"
+    "• Your best score is saved automatically.\n"
+    "• Use /top to see the highest-scoring players.\n\n"
+    "8) Tips\n"
+    "• Stay calm; avoid unnecessary jumps.\n"
+    "• Jump timing is the most critical skill.\n"
+    "• Push for long runs, collect red scarves, and aim for the top! 🧣❤️"
 )
 
 # ---------- Commands ----------
@@ -270,11 +274,11 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not msg:
         return
 
-    # Set the blue menu button label to PLAY (WebApp)
+    # Set the blue menu button label to "KAPI RUN" (WebApp)
     try:
         await context.bot.set_chat_menu_button(
             menu_button=MenuButtonWebApp(
-                text="PLAY",
+                text="KAPI RUN",
                 web_app=WebAppInfo(url=PUBLIC_GAME_URL)  # no cache-bust needed for menu
             )
         )
@@ -284,11 +288,11 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Send English-only start info (no inline buttons)
     await msg.reply_text(START_TEXT, parse_mode="Markdown")
 
-async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def cmd_info(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = update.message or update.effective_message
     if not msg:
         return
-    await msg.reply_text(HELP_TEXT, parse_mode="Markdown")
+    await msg.reply_text(INFO_TEXT, parse_mode="Markdown")
 
 async def cmd_top(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = update.message or update.effective_message
@@ -411,7 +415,7 @@ async def _confirm_reset_all(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
 # Register handlers
 telegram_app.add_handler(CommandHandler("start",            cmd_start))
-telegram_app.add_handler(CommandHandler("help",             cmd_help))
+telegram_app.add_handler(CommandHandler("info",             cmd_info))
 telegram_app.add_handler(CommandHandler("top",              cmd_top))
 telegram_app.add_handler(CommandHandler("whoami",           cmd_whoami))
 telegram_app.add_handler(CommandHandler("admin_test",       cmd_admin_test))
