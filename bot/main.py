@@ -16,7 +16,13 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncEngine
 from sqlalchemy import text
 
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import (
+    Update,
+    InlineKeyboardButton,
+    InlineKeyboardMarkup,
+    MenuButtonWebApp,      # <-- eklendi
+    WebAppInfo             # <-- eklendi
+)
 from telegram.ext import (
     Application,
     CommandHandler,
@@ -224,7 +230,20 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = update.message or update.effective_message
     if not msg:
         return
-    # Cache-bust
+
+    # --- Menü butonunu (mavi bar) PLAY olarak ayarla ---
+    try:
+        await context.bot.set_chat_menu_button(
+            menu_button=MenuButtonWebApp(
+                text="PLAY",
+                web_app=WebAppInfo(url=PUBLIC_GAME_URL)  # menü için cache-bust gerekmez
+            )
+        )
+    except Exception as e:
+        # sessiz geç; gerekirse loglayabilirsin
+        print("set_chat_menu_button error:", e, file=sys.stderr)
+
+    # Cache-bust'lı inline link (mevcut davranışı koruyorum)
     v = str(int(time.time()))
     sep = "&" if "?" in PUBLIC_GAME_URL else "?"
     url = f"{PUBLIC_GAME_URL}{sep}v={v}"
