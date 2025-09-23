@@ -4,7 +4,6 @@ import sys
 import json
 import hmac
 import hashlib
-import time
 from typing import Any, Dict, Optional
 from urllib.parse import parse_qs, parse_qsl, unquote_plus
 
@@ -16,18 +15,8 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncEngine
 from sqlalchemy import text
 
-from telegram import (
-    Update,
-    MenuButtonWebApp,
-    WebAppInfo
-)
-from telegram.ext import (
-    Application,
-    CommandHandler,
-    MessageHandler,
-    ContextTypes,
-    filters,
-)
+from telegram import Update, MenuButtonWebApp, WebAppInfo
+from telegram.ext import Application, CommandHandler, MessageHandler, ContextTypes, filters
 
 # =========================
 # ENV
@@ -50,6 +39,7 @@ SECRET_ADMIN = (os.environ.get("SECRET_ADMIN") or "").strip()
 # =========================
 app = FastAPI(title="KAPI RUN - Bot & API")
 
+# Disable cache for static files served via FastAPI endpoints
 class NoStoreForStatic(BaseHTTPMiddleware):
     async def dispatch(self, request, call_next):
         response = await call_next(request)
@@ -65,6 +55,7 @@ class NoStoreForStatic(BaseHTTPMiddleware):
 
 app.add_middleware(NoStoreForStatic)
 
+# Static mounts (for folders)
 if os.path.isdir("images"):
     app.mount("/images", StaticFiles(directory="images"), name="images")
 if os.path.isdir("scripts"):
@@ -89,6 +80,7 @@ async def serve_index():
         return FileResponse(index_path, media_type="text/html")
     return JSONResponse({"ok": True, "hint": "index.html not found"}, status_code=200)
 
+# ---------- helpers to locate root files (cwd or repo root) ----------
 def _first_existing(filename: str, fallback: bool = True):
     p1 = os.path.join(os.getcwd(), filename)
     if os.path.isfile(p1):
@@ -100,11 +92,55 @@ def _first_existing(filename: str, fallback: bool = True):
             return p2
     return None
 
+# ---------- root-level file endpoints (needed for proper styling & cache bust) ----------
+@app.get("/style.css")
+async def serve_style_css():
+    p = _first_existing("style.css")
+    if p:
+        return FileResponse(p, media_type="text/css")
+    raise HTTPException(status_code=404, detail="style.css not found")
+
 @app.get("/data.json")
 async def serve_data_json():
     p = _first_existing("data.json")
     if not p:
         raise HTTPException(status_code=404, detail="data.json not found")
+    return FileResponse(
+        p,
+        media_type="application/json",
+        headers={
+            "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+            "Pragma": "no-cache",
+            "Expires": "0",
+        },
+    )
+
+@app.get("/appmanifest.json")
+async def serve_appmanifest_json():
+    p = _first_existing("appmanifest.json")
+    if p:
+        return FileResponse(p, media_type="application/manifest+json")
+    raise HTTPException(status_code=404, detail="appmanifest.json not found")
+
+@app.get("/manifest.json")
+async def serve_manifest_json():
+    p = _first_existing("manifest.json")
+    if p:
+        return FileResponse(p, media_type="application/manifest+json")
+    raise HTTPException(status_code=404, detail="manifest.json not found")
+
+@app.get("/sw.js")
+async def serve_service_worker():
+    p = _first_existing("sw.js")
+    if p:
+        return FileResponse(p, media_type="application/javascript")
+    raise HTTPException(status_code=404, detail="sw.js not found")
+
+@app.get("/offline.json")
+async def serve_offline_json():
+    p = _first_existing("offline.json")
+    if not p:
+        raise HTTPException(status_code=404, detail="offline.json not found")
     return FileResponse(
         p,
         media_type="application/json",
@@ -200,6 +236,7 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not msg:
         return
 
+    # Blue menu button (bottom bar)
     try:
         await context.bot.set_chat_menu_button(
             menu_button=MenuButtonWebApp(
@@ -246,8 +283,8 @@ async def cmd_top(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await msg.reply_text("🏆 Global Leaderboard\n" + "\n".join(lines))
 
 telegram_app.add_handler(CommandHandler("start", cmd_start))
-telegram_app.add_handler(CommandHandler("info", cmd_info))
-telegram_app.add_handler(CommandHandler("top", cmd_top))
+telegram_app.add_handler(CommandHandler("info",  cmd_info))
+telegram_app.add_handler(CommandHandler("top",   cmd_top))
 
 # =========================
 # WEBHOOK
