@@ -156,7 +156,7 @@ def _is_owner(update: Update) -> bool:
 # ---------- User-visible texts ----------
 START_TEXT = (
     "**🧣 Welcome OKAPI!**\n\n"
-    "**Kapi is ready to run — are you ready to guide him?**\n"
+    "**Kapi is ready to run. Are you ready to guide him?**\n"
     "**Tap the KAPI RUN button below to begin your adventure.**\n"
     "**Type /top to see who’s leading the herd.**\n"
     "**Use /info for tips and secrets.**"
