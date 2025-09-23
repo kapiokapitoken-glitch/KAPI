@@ -226,16 +226,14 @@ def _is_owner(update: Update) -> bool:
 
 # ---------- User-visible texts ----------
 START_TEXT = (
-    "🧣 OKAPI TOKEN MINI MOBILE GAME 🕹️\n\n"
-    "Tap the *KAPI RUN* button in the menu to start the game.\n"
-    "Run with Kapi and overcome scary obstacles.\n"
-    "Collect red scarves 🧣 to increase your score.\n"
-    "When Kapi gets scared 😱 he may perform a second jump (temporary and unpredictable).\n"
-    "Your best score is saved automatically 🏆\n"
-    "Use /top to view the leaderboard.\n"
-    "📱 *Mobile only:* play inside the Telegram app on iOS/Android.\n"
-    "For detailed info use /info ℹ️"
+    START_TEXT = (
+    "**🧣 Welcome OKAPI!**\n\n"
+    "**Kapi is ready to run. Are you ready to guide him?**\n"
+    "**Tap the KAPI RUN button below to begin your adventure.**\n"
+    "**Type /top to see who’s leading the herd.**\n"
+    "**Use /info for tips and secrets.**"
 )
+
 
 INFO_TEXT = (
     "🎮 Detailed Gameplay Guide\n\n"
