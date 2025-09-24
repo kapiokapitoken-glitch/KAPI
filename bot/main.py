@@ -16,7 +16,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncEngine
 from sqlalchemy import text
 
-from telegram import Update, MenuButtonWebApp, WebAppInfo
+from telegram import Update, MenuButtonWebApp, WebAppInfo, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, ContextTypes
 
 # =========================
@@ -256,7 +256,12 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         print("set_chat_menu_button error:", e, file=sys.stderr)
 
-    await msg.reply_text(START_TEXT, parse_mode="Markdown")
+    # Inline "▶️ Play" button under the /start message (opens the same WebApp)
+    keyboard = InlineKeyboardMarkup([[
+        InlineKeyboardButton("▶️ Play", web_app=WebAppInfo(url=PUBLIC_GAME_URL))
+    ]])
+
+    await msg.reply_text(START_TEXT, parse_mode="Markdown", reply_markup=keyboard)
 
 async def cmd_info(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = update.message or update.effective_message
