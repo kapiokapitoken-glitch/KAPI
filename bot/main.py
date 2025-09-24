@@ -16,7 +16,13 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncEngine
 from sqlalchemy import text
 
-from telegram import Update, MenuButtonWebApp, WebAppInfo, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import (
+    Update,
+    MenuButtonWebApp,
+    WebAppInfo,
+    InlineKeyboardButton,
+    InlineKeyboardMarkup,
+)
 from telegram.ext import Application, CommandHandler, ContextTypes
 
 # =========================
@@ -245,7 +251,7 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not msg:
         return
 
-    # Blue menu button (bottom bar)
+    # Bottom bar menu button (private chats)
     try:
         await context.bot.set_chat_menu_button(
             menu_button=MenuButtonWebApp(
@@ -256,11 +262,25 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         print("set_chat_menu_button error:", e, file=sys.stderr)
 
-    # Inline "Play" WebApp button just below the START_TEXT
-    kb = InlineKeyboardMarkup([
-        [InlineKeyboardButton("▶️ Play", web_app=WebAppInfo(url=PUBLIC_GAME_URL))]
-    ])
-    await msg.reply_text(START_TEXT, parse_mode="Markdown", reply_markup=kb)
+    chat = update.effective_chat
+    is_group = bool(chat and chat.type in ("group", "supergroup"))
+
+    # Private: WebApp button  |  Group: URL button
+    if is_group:
+        kb = InlineKeyboardMarkup([
+            [InlineKeyboardButton("▶️ Play", url=PUBLIC_GAME_URL)]
+        ])
+    else:
+        kb = InlineKeyboardMarkup([
+            [InlineKeyboardButton("▶️ Play", web_app=WebAppInfo(url=PUBLIC_GAME_URL))]
+        ])
+
+    try:
+        await msg.reply_text(START_TEXT, parse_mode="Markdown", reply_markup=kb)
+    except Exception as e:
+        print("start reply error:", e, file=sys.stderr)
+        fallback_text = START_TEXT + f"\n\nPlay: {PUBLIC_GAME_URL}"
+        await msg.reply_text(fallback_text, parse_mode="Markdown", disable_web_page_preview=True)
 
 async def cmd_info(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = update.message or update.effective_message
