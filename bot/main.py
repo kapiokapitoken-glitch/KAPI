@@ -16,8 +16,9 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncEngine
 from sqlalchemy import text
 
-from telegram import Update, MenuButtonWebApp, WebAppInfo, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import Update, MenuButtonWebApp, WebAppInfo
 from telegram.ext import Application, CommandHandler, ContextTypes
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup  # <-- eklendi
 
 # =========================
 # ENV
@@ -256,12 +257,7 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         print("set_chat_menu_button error:", e, file=sys.stderr)
 
-    # Inline "▶️ Play" button under the /start message (opens the same WebApp)
-    keyboard = InlineKeyboardMarkup([[
-        InlineKeyboardButton("▶️ Play", web_app=WebAppInfo(url=PUBLIC_GAME_URL))
-    ]])
-
-    await msg.reply_text(START_TEXT, parse_mode="Markdown", reply_markup=keyboard)
+    await msg.reply_text(START_TEXT, parse_mode="Markdown")
 
 async def cmd_info(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = update.message or update.effective_message
@@ -358,6 +354,14 @@ async def cmd_admin_reset_all(update: Update, context: ContextTypes.DEFAULT_TYPE
         await conn.execute(text("UPDATE scores SET best_score=0, updated_at=now()"))
     await (update.message or update.effective_message).reply_text("ok:true reset_all")
 
+# ----- NEW: /play (gruplarda kolay erişim için) -----
+async def cmd_play(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    msg = update.message or update.effective_message
+    if not msg:
+        return
+    kb = [[InlineKeyboardButton("▶️ Play", web_app=WebAppInfo(url=PUBLIC_GAME_URL))]]
+    await msg.reply_text("Tap to play:", reply_markup=InlineKeyboardMarkup(kb))
+
 telegram_app.add_handler(CommandHandler("start",            cmd_start))
 telegram_app.add_handler(CommandHandler("info",             cmd_info))
 telegram_app.add_handler(CommandHandler("top",              cmd_top))
@@ -365,6 +369,7 @@ telegram_app.add_handler(CommandHandler("whoami",           cmd_whoami))
 telegram_app.add_handler(CommandHandler("admin_test",       cmd_admin_test))
 telegram_app.add_handler(CommandHandler("admin_reset_user", cmd_admin_reset_user))
 telegram_app.add_handler(CommandHandler("admin_reset_all",  cmd_admin_reset_all))
+telegram_app.add_handler(CommandHandler("play",             cmd_play))  # <-- eklendi
 
 # =========================
 # SCORE SIGNATURE HELPERS
