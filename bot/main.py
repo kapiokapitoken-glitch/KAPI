@@ -23,7 +23,6 @@ from telegram import (
     InlineKeyboardButton,
     InlineKeyboardMarkup,
 )
-    # NOTE: python-telegram-bot v20+
 from telegram.ext import Application, CommandHandler, ContextTypes
 
 # =========================
@@ -250,33 +249,34 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat = update.effective_chat
     is_group = bool(chat and chat.type in ("group", "supergroup"))
 
-    # Menüdeki "KAPI RUN" miniapp butonu (yalnızca özel sohbetler için ayarlanır)
+    # Özel sohbette menüye mini-app butonu (kullanıcının talebiyle aynı URL)
     if not is_group:
         try:
             await context.bot.set_chat_menu_button(
                 chat_id=chat.id,
                 menu_button=MenuButtonWebApp(
                     text="KAPI RUN",
-                    web_app=WebAppInfo(url=PUBLIC_GAME_URL)  # miniapp URL
+                    web_app=WebAppInfo(url=PUBLIC_GAME_URL)
                 )
             )
         except Exception as e:
             print("set_chat_menu_button error:", e, file=sys.stderr)
 
-    # Tek buton: PLAY — miniapp ile aynı adres (WebApp)
+    # Her yerde tek tür: Telegram GAME deep-link
+    bot_username = context.bot.username
+    deep_link = f"https://t.me/{bot_username}?game={GAME_SHORT_NAME}"
+
+    # Tek buton
     kb = InlineKeyboardMarkup([
-        [InlineKeyboardButton("▶️ PLAY", web_app=WebAppInfo(url=PUBLIC_GAME_URL))]
+        [InlineKeyboardButton("▶️ PLAY", url=deep_link)]
     ])
 
     try:
         await msg.reply_text(START_TEXT, parse_mode="Markdown", reply_markup=kb)
     except Exception as e:
-        # Bazı eski istemciler gruplarda web_app'i reddedebilir → tek butonlu URL fallback
-        print("start reply error (web_app), falling back to URL:", e, file=sys.stderr)
-        kb_fallback = InlineKeyboardMarkup([
-            [InlineKeyboardButton("▶️ PLAY", url=PUBLIC_GAME_URL)]
-        ])
-        await msg.reply_text(START_TEXT, parse_mode="Markdown", reply_markup=kb_fallback, disable_web_page_preview=True)
+        # Çok nadir: mesaj gönderimi sorununda düz metinle deep-link
+        print("start reply error:", e, file=sys.stderr)
+        await msg.reply_text(START_TEXT + f"\n\nPlay: {deep_link}", parse_mode="Markdown", disable_web_page_preview=True)
 
 async def cmd_info(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = update.message or update.effective_message
@@ -373,7 +373,6 @@ async def cmd_admin_reset_all(update: Update, context: ContextTypes.DEFAULT_TYPE
 
 telegram_app.add_handler(CommandHandler("start",            cmd_start))
 telegram_app.add_handler(CommandHandler("info",             cmd_info))
-# /nfo aliası kaldırıldı
 telegram_app.add_handler(CommandHandler("top",              cmd_top))
 telegram_app.add_handler(CommandHandler("whoami",           cmd_whoami))
 telegram_app.add_handler(CommandHandler("admin_test",       cmd_admin_test))
