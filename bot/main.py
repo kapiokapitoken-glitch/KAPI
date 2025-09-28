@@ -23,6 +23,7 @@ from telegram import (
     InlineKeyboardButton,
     InlineKeyboardMarkup,
 )
+    # NOTE: python-telegram-bot v20+
 from telegram.ext import Application, CommandHandler, ContextTypes
 
 # =========================
@@ -46,7 +47,6 @@ SECRET_ADMIN = (os.environ.get("SECRET_ADMIN") or "").strip()
 # =========================
 app = FastAPI(title="KAPI RUN - Bot & API")
 
-# Disable cache for static files served via FastAPI endpoints
 class NoStoreForStatic(BaseHTTPMiddleware):
     async def dispatch(self, request, call_next):
         response = await call_next(request)
@@ -62,7 +62,6 @@ class NoStoreForStatic(BaseHTTPMiddleware):
 
 app.add_middleware(NoStoreForStatic)
 
-# Static mounts (for folders)
 if os.path.isdir("images"):
     app.mount("/images", StaticFiles(directory="images"), name="images")
 if os.path.isdir("scripts"):
@@ -80,7 +79,6 @@ async def health() -> Dict[str, Any]:
 async def list_routes():
     return [{"path": r.path, "methods": list(getattr(r, "methods", []))} for r in app.routes]
 
-# ---------- helpers to locate root files (cwd or repo root) ----------
 def _first_existing(filename: str, fallback: bool = True):
     p1 = os.path.join(os.getcwd(), filename)
     if os.path.isfile(p1):
@@ -99,7 +97,6 @@ async def serve_index():
         return FileResponse(p, media_type="text/html")
     return JSONResponse({"ok": True, "hint": "index.html not found"}, status_code=200)
 
-# ---------- root-level file endpoints ----------
 @app.get("/style.css")
 async def serve_style_css():
     p = _first_existing("style.css")
@@ -158,7 +155,6 @@ async def serve_offline_json():
         },
     )
 
-# Self-test page helper (optional but handy)
 @app.get("/webapp-check.html")
 async def serve_webapp_check_html():
     p = _first_existing("webapp-check.html")
@@ -208,7 +204,7 @@ def _is_owner(update: Update) -> bool:
 START_TEXT = (
     "🧣 *Welcome, OKAPI!*\n\n"
     "Kapi is ready to run. Are you ready to guide it?\n"
-    "Tap the *KAPI RUN or PLAY* button below to start your adventure.\n"
+    "Tap the *PLAY* button below to start your adventure.\n"
     "Type /top to see the leaderboard.\n"
     "Use /info for tips and secrets."
 )
@@ -254,37 +250,33 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat = update.effective_chat
     is_group = bool(chat and chat.type in ("group", "supergroup"))
 
-    # Only set menu button in private chats (some clients reject it in groups)
+    # Menüdeki "KAPI RUN" miniapp butonu (yalnızca özel sohbetler için ayarlanır)
     if not is_group:
         try:
             await context.bot.set_chat_menu_button(
                 chat_id=chat.id,
                 menu_button=MenuButtonWebApp(
                     text="KAPI RUN",
-                    web_app=WebAppInfo(url=PUBLIC_GAME_URL)
+                    web_app=WebAppInfo(url=PUBLIC_GAME_URL)  # miniapp URL
                 )
             )
         except Exception as e:
             print("set_chat_menu_button error:", e, file=sys.stderr)
 
-    # Both buttons open the SAME deep-link (Telegram game), to avoid external browser
-    bot_username = context.bot.username
-    deep_link = f"https://t.me/{bot_username}?game={GAME_SHORT_NAME}"
-
-    # Private & Group: same behavior — open Telegram Game deep-link
+    # Tek buton: PLAY — miniapp ile aynı adres (WebApp)
     kb = InlineKeyboardMarkup([
-        [
-            InlineKeyboardButton("▶️ PLAY", url=deep_link),
-            InlineKeyboardButton("KAPI RUN", url=deep_link),
-        ]
+        [InlineKeyboardButton("▶️ PLAY", web_app=WebAppInfo(url=PUBLIC_GAME_URL))]
     ])
 
     try:
         await msg.reply_text(START_TEXT, parse_mode="Markdown", reply_markup=kb)
     except Exception as e:
-        print("start reply error:", e, file=sys.stderr)
-        fallback_text = START_TEXT + f"\n\nPlay: {deep_link}"
-        await msg.reply_text(fallback_text, parse_mode="Markdown", disable_web_page_preview=True)
+        # Bazı eski istemciler gruplarda web_app'i reddedebilir → tek butonlu URL fallback
+        print("start reply error (web_app), falling back to URL:", e, file=sys.stderr)
+        kb_fallback = InlineKeyboardMarkup([
+            [InlineKeyboardButton("▶️ PLAY", url=PUBLIC_GAME_URL)]
+        ])
+        await msg.reply_text(START_TEXT, parse_mode="Markdown", reply_markup=kb_fallback, disable_web_page_preview=True)
 
 async def cmd_info(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = update.message or update.effective_message
@@ -344,7 +336,6 @@ async def cmd_admin_reset_user(update: Update, context: ContextTypes.DEFAULT_TYP
     if engine is None:
         await (update.message or update.effective_message).reply_text("db not configured")
         return
-    # args: <token> <user_id>
     if not context.args or len(context.args) < 2:
         await (update.message or update.effective_message).reply_text("usage: /admin_reset_user <token> <user_id>")
         return
@@ -372,7 +363,6 @@ async def cmd_admin_reset_all(update: Update, context: ContextTypes.DEFAULT_TYPE
     if engine is None:
         await (update.message or update.effective_message).reply_text("db not configured")
         return
-    # args: <token>
     tok = " ".join(context.args).strip() if context.args else ""
     if not (SECRET_ADMIN and tok == SECRET_ADMIN):
         await (update.message or update.effective_message).reply_text("token invalid")
@@ -383,7 +373,7 @@ async def cmd_admin_reset_all(update: Update, context: ContextTypes.DEFAULT_TYPE
 
 telegram_app.add_handler(CommandHandler("start",            cmd_start))
 telegram_app.add_handler(CommandHandler("info",             cmd_info))
-# NOTE: /nfo aliası kaldırıldı
+# /nfo aliası kaldırıldı
 telegram_app.add_handler(CommandHandler("top",              cmd_top))
 telegram_app.add_handler(CommandHandler("whoami",           cmd_whoami))
 telegram_app.add_handler(CommandHandler("admin_test",       cmd_admin_test))
@@ -394,9 +384,6 @@ telegram_app.add_handler(CommandHandler("admin_reset_all",  cmd_admin_reset_all)
 # SCORE SIGNATURE HELPERS
 # =========================
 def _hmac_ok(user_id: int, score: int, sig: str) -> bool:
-    """
-    Legacy imza (client->server SECRET HMAC) fallback.
-    """
     if not SECRET:
         return False
     msg = f"{user_id}:{score}".encode("utf-8")
@@ -404,13 +391,6 @@ def _hmac_ok(user_id: int, score: int, sig: str) -> bool:
     return hmac.compare_digest(expected, sig)
 
 def _check_webapp_initdata(init_data: str, bot_token: str) -> bool:
-    """
-    Telegram WebApp initData doğrulaması (bot token ile).
-    Kural: data_check_string = 'hash' HARİÇ TÜM parametreler (signature DAHİL),
-    alfabetik sırada key=value ve '\\n' ile birleştirilir.
-    secret = HMAC_SHA256(key=b"WebAppData", msg=bot_token)
-    calc   = HMAC_SHA256(key=secret, msg=data_check_string).hexdigest()
-    """
     if not init_data or not bot_token:
         return False
     try:
@@ -418,12 +398,11 @@ def _check_webapp_initdata(init_data: str, bot_token: str) -> bool:
         hash_val: Optional[str] = None
         pairs = []
         for k, v in parsed:
-            k = unquote_plus(k)
-            v = unquote_plus(v)
+            k = unquote_plus(k); v = unquote_plus(v)
             if k == "hash":
                 hash_val = v
             else:
-                pairs.append((k, v))  # 'signature' DAHİL
+                pairs.append((k, v))
         if not hash_val:
             return False
         pairs.sort(key=lambda kv: kv[0])
@@ -443,27 +422,18 @@ async def post_score(
     request: Request,
     x_telegram_init_data: Optional[str] = Header(default=None)
 ):
-    """
-    Skor kaydı:
-      - Öncelik: Telegram WebApp initData imzası (header: X-Telegram-Init-Data veya body.init_data)
-      - Fallback: Legacy SECRET HMAC (user_id:score -> sig)
-    """
-    # Body
     try:
         body = await request.json()
         if not isinstance(body, dict):
             body = {}
     except Exception:
         body = {}
-
-    # Score
     try:
         score_val = int(body.get("score", 0))
     except Exception:
         score_val = 0
     score_val = max(0, score_val)
 
-    # 1) WebApp initData doğrulaması
     init_data = (x_telegram_init_data or body.get("init_data") or "").strip()
     user_id: Optional[int] = None
     username: Optional[str] = None
@@ -479,7 +449,6 @@ async def post_score(
             except Exception:
                 pass
     else:
-        # 2) Legacy HMAC fallback (eski client'lar için)
         if all(k in body for k in ("user_id", "score", "sig")):
             try:
                 uid = int(body.get("user_id"))
@@ -496,7 +465,6 @@ async def post_score(
     if engine is None:
         raise HTTPException(status_code=500, detail="database not configured")
 
-    # DB upsert
     async with engine.begin() as conn:
         await conn.execute(
             text("""
@@ -528,7 +496,7 @@ async def leaderboard(limit: int = 200):
     return rows
 
 # =========================
-# ADMIN API (HTTP) — opsiyonel
+# ADMIN API (HTTP)
 # =========================
 def _check_admin_header(request: Request) -> bool:
     tok = request.headers.get("X-Admin-Token", "") if hasattr(request, "headers") else ""
