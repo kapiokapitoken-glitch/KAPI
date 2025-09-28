@@ -206,16 +206,11 @@ def _is_owner(update: Update) -> bool:
 
 # ---------- User-visible texts ----------
 START_TEXT = (
-    "🧣 *Hoş geldin OKAPI!*\n\n"
-    "Kapi koşmaya hazır. Onu yönlendirmeye hazır mısın?\n"
-    "Macerana başlamak için aşağıdaki *KAPI RUN veya PLAY* butonuna dokun.\n"
-    "Sürüyü kimin yönettiğini görmek için /top yaz.\n"
-    "İpuçları ve sırlar için /nfo kullan.\n\n"
     "🧣 *Welcome, OKAPI!*\n\n"
     "Kapi is ready to run. Are you ready to guide it?\n"
     "Tap the *KAPI RUN or PLAY* button below to start your adventure.\n"
     "Type /top to see the leaderboard.\n"
-    "Use /nfo for tips and secrets."
+    "Use /info for tips and secrets."
 )
 
 INFO_TEXT = (
@@ -272,21 +267,23 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except Exception as e:
             print("set_chat_menu_button error:", e, file=sys.stderr)
 
-    # Private: WebApp button  |  Group: URL button
-    if is_group:
-        kb = InlineKeyboardMarkup([
-            [InlineKeyboardButton("▶️ PLAY / KAPI RUN", url=PUBLIC_GAME_URL)]
-        ])
-    else:
-        kb = InlineKeyboardMarkup([
-            [InlineKeyboardButton("▶️ PLAY / KAPI RUN", web_app=WebAppInfo(url=PUBLIC_GAME_URL))]
-        ])
+    # Both buttons open the SAME deep-link (Telegram game), to avoid external browser
+    bot_username = context.bot.username
+    deep_link = f"https://t.me/{bot_username}?game={GAME_SHORT_NAME}"
+
+    # Private & Group: same behavior — open Telegram Game deep-link
+    kb = InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton("▶️ PLAY", url=deep_link),
+            InlineKeyboardButton("KAPI RUN", url=deep_link),
+        ]
+    ])
 
     try:
         await msg.reply_text(START_TEXT, parse_mode="Markdown", reply_markup=kb)
     except Exception as e:
         print("start reply error:", e, file=sys.stderr)
-        fallback_text = START_TEXT + f"\n\nPlay: {PUBLIC_GAME_URL}"
+        fallback_text = START_TEXT + f"\n\nPlay: {deep_link}"
         await msg.reply_text(fallback_text, parse_mode="Markdown", disable_web_page_preview=True)
 
 async def cmd_info(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -386,7 +383,7 @@ async def cmd_admin_reset_all(update: Update, context: ContextTypes.DEFAULT_TYPE
 
 telegram_app.add_handler(CommandHandler("start",            cmd_start))
 telegram_app.add_handler(CommandHandler("info",             cmd_info))
-telegram_app.add_handler(CommandHandler("nfo",              cmd_info))  # alias
+# NOTE: /nfo aliası kaldırıldı
 telegram_app.add_handler(CommandHandler("top",              cmd_top))
 telegram_app.add_handler(CommandHandler("whoami",           cmd_whoami))
 telegram_app.add_handler(CommandHandler("admin_test",       cmd_admin_test))
