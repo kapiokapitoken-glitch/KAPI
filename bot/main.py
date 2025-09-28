@@ -22,6 +22,7 @@ from telegram import (
     WebAppInfo,
     InlineKeyboardButton,
     InlineKeyboardMarkup,
+    CallbackGame,          # 👈 eklendi
 )
 from telegram.ext import Application, CommandHandler, ContextTypes
 
@@ -30,8 +31,8 @@ from telegram.ext import Application, CommandHandler, ContextTypes
 # =========================
 TELEGRAM_BOT_TOKEN = os.environ["TELEGRAM_BOT_TOKEN"]
 DATABASE_URL = (os.environ.get("DATABASE_URL") or "").strip()
-SECRET = (os.environ.get("SECRET") or "").strip()  # optional legacy HMAC
-PUBLIC_GAME_URL = (os.environ.get("PUBLIC_GAME_URL") or "/").strip()
+SECRET = (os.environ.get("SECRET") or "").strip()
+PUBLIC_GAME_URL = (os.environ.get("PUBLIC_GAME_URL") or "/").strip()   # menü butonu için
 GAME_SHORT_NAME = (os.environ.get("GAME_SHORT_NAME") or "kapi_run").strip()
 
 WEBHOOK_PATH = (os.environ.get("WEBHOOK_PATH") or "/tg/webhook").strip()
@@ -249,7 +250,7 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat = update.effective_chat
     is_group = bool(chat and chat.type in ("group", "supergroup"))
 
-    # Özel sohbette menüye mini-app butonu (kullanıcının talebiyle aynı URL)
+    # Özel sohbette alt menüye miniapp butonu (kullanıcı talebiyle korunuyor)
     if not is_group:
         try:
             await context.bot.set_chat_menu_button(
@@ -262,21 +263,24 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except Exception as e:
             print("set_chat_menu_button error:", e, file=sys.stderr)
 
-    # Her yerde tek tür: Telegram GAME deep-link
-    bot_username = context.bot.username
-    deep_link = f"https://t.me/{bot_username}?game={GAME_SHORT_NAME}"
-
-    # Tek buton
-    kb = InlineKeyboardMarkup([
-        [InlineKeyboardButton("▶️ PLAY", url=deep_link)]
-    ])
-
+    # 👇 OYUNU HER YERDE TELEGRAM İÇİNDE AÇ: send_game + callback_game
     try:
-        await msg.reply_text(START_TEXT, parse_mode="Markdown", reply_markup=kb)
+        await context.bot.send_game(
+            chat_id=chat.id,
+            game_short_name=GAME_SHORT_NAME,
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("▶️ PLAY", callback_game=CallbackGame())]
+            ]),
+        )
+        # Bilgilendirici metni ayrıca gönder
+        await msg.reply_text(START_TEXT, parse_mode="Markdown", disable_web_page_preview=True)
     except Exception as e:
-        # Çok nadir: mesaj gönderimi sorununda düz metinle deep-link
-        print("start reply error:", e, file=sys.stderr)
-        await msg.reply_text(START_TEXT + f"\n\nPlay: {deep_link}", parse_mode="Markdown", disable_web_page_preview=True)
+        # Çok nadir fallback: deep-link (yine Telegram içinde açar)
+        print("send_game failed, fallback to deep-link:", e, file=sys.stderr)
+        bot_username = context.bot.username
+        deep_link = f"https://t.me/{bot_username}?game={GAME_SHORT_NAME}"
+        kb = InlineKeyboardMarkup([[InlineKeyboardButton("▶️ PLAY", url=deep_link)]])
+        await msg.reply_text(START_TEXT, parse_mode="Markdown", reply_markup=kb, disable_web_page_preview=True)
 
 async def cmd_info(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = update.message or update.effective_message
