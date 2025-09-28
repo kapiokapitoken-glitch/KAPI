@@ -206,11 +206,16 @@ def _is_owner(update: Update) -> bool:
 
 # ---------- User-visible texts ----------
 START_TEXT = (
-    "**🧣 Welcome OKAPI!**\n\n"
-    "**Kapi is ready to run. Are you ready to guide him?**\n"
-    "**Tap the KAPI RUN button below to begin your adventure.**\n"
-    "**Type /top to see who’s leading the herd.**\n"
-    "**Use /info for tips and secrets.**"
+    "🧣 *Hoş geldin OKAPI!*\n\n"
+    "Kapi koşmaya hazır. Onu yönlendirmeye hazır mısın?\n"
+    "Macerana başlamak için aşağıdaki *KAPI RUN veya PLAY* butonuna dokun.\n"
+    "Sürüyü kimin yönettiğini görmek için /top yaz.\n"
+    "İpuçları ve sırlar için /nfo kullan.\n\n"
+    "🧣 *Welcome, OKAPI!*\n\n"
+    "Kapi is ready to run. Are you ready to guide it?\n"
+    "Tap the *KAPI RUN or PLAY* button below to start your adventure.\n"
+    "Type /top to see the leaderboard.\n"
+    "Use /nfo for tips and secrets."
 )
 
 INFO_TEXT = (
@@ -251,28 +256,30 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not msg:
         return
 
-    # Bottom bar menu button (private chats)
-    try:
-        await context.bot.set_chat_menu_button(
-            menu_button=MenuButtonWebApp(
-                text="KAPI RUN",
-                web_app=WebAppInfo(url=PUBLIC_GAME_URL)
-            )
-        )
-    except Exception as e:
-        print("set_chat_menu_button error:", e, file=sys.stderr)
-
     chat = update.effective_chat
     is_group = bool(chat and chat.type in ("group", "supergroup"))
+
+    # Only set menu button in private chats (some clients reject it in groups)
+    if not is_group:
+        try:
+            await context.bot.set_chat_menu_button(
+                chat_id=chat.id,
+                menu_button=MenuButtonWebApp(
+                    text="KAPI RUN",
+                    web_app=WebAppInfo(url=PUBLIC_GAME_URL)
+                )
+            )
+        except Exception as e:
+            print("set_chat_menu_button error:", e, file=sys.stderr)
 
     # Private: WebApp button  |  Group: URL button
     if is_group:
         kb = InlineKeyboardMarkup([
-            [InlineKeyboardButton("▶️ Play", url=PUBLIC_GAME_URL)]
+            [InlineKeyboardButton("▶️ PLAY / KAPI RUN", url=PUBLIC_GAME_URL)]
         ])
     else:
         kb = InlineKeyboardMarkup([
-            [InlineKeyboardButton("▶️ Play", web_app=WebAppInfo(url=PUBLIC_GAME_URL))]
+            [InlineKeyboardButton("▶️ PLAY / KAPI RUN", web_app=WebAppInfo(url=PUBLIC_GAME_URL))]
         ])
 
     try:
@@ -379,6 +386,7 @@ async def cmd_admin_reset_all(update: Update, context: ContextTypes.DEFAULT_TYPE
 
 telegram_app.add_handler(CommandHandler("start",            cmd_start))
 telegram_app.add_handler(CommandHandler("info",             cmd_info))
+telegram_app.add_handler(CommandHandler("nfo",              cmd_info))  # alias
 telegram_app.add_handler(CommandHandler("top",              cmd_top))
 telegram_app.add_handler(CommandHandler("whoami",           cmd_whoami))
 telegram_app.add_handler(CommandHandler("admin_test",       cmd_admin_test))
