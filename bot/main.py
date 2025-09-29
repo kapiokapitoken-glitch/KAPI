@@ -29,7 +29,7 @@ from telegram.ext import Application, CommandHandler, ContextTypes
 # =========================
 TELEGRAM_BOT_TOKEN = os.environ["TELEGRAM_BOT_TOKEN"]
 DATABASE_URL = (os.environ.get("DATABASE_URL") or "").strip()
-SECRET = (os.environ.get("SECRET") or "").strip()  # optional legacy HMAC
+SECRET = (os.environ.get("SECRET") or "").strip()
 PUBLIC_GAME_URL = (os.environ.get("PUBLIC_GAME_URL") or "/").strip()
 GAME_SHORT_NAME = (os.environ.get("GAME_SHORT_NAME") or "kapi_run").strip()
 
@@ -203,7 +203,7 @@ def _is_owner(update: Update) -> bool:
 START_TEXT = (
     "🧣 *Welcome, OKAPI!*\n\n"
     "Kapi is ready to run. Are you ready to guide it?\n"
-    "Tap the *KAPI RUN and PLAY* button below to start your adventure.\n"
+    "Tap the *KAPI RUN or PLAY* button below to start your adventure.\n"
     "Type /top to see the leaderboard.\n"
     "Use /info for tips and secrets."
 )
@@ -254,7 +254,7 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat = update.effective_chat
     is_group = bool(chat and chat.type in ("group", "supergroup"))
 
-    # Özel sohbette alt menüde KAPI RUN mini-app butonu
+    # Özel sohbette alt menüde KAPI RUN mini-app butonu (WebApp)
     if not is_group:
         try:
             await context.bot.set_chat_menu_button(
@@ -267,7 +267,7 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except Exception as e:
             print("set_chat_menu_button error:", e, file=sys.stderr)
 
-    # /start için tek buton: PLAY (WebApp = miniapp ile aynı URL)
+    # /start: tek buton PLAY — WebApp URL (mini-app ile aynı)
     kb = InlineKeyboardMarkup([
         [InlineKeyboardButton("▶️ PLAY", web_app=WebAppInfo(url=PUBLIC_GAME_URL))]
     ])
@@ -275,7 +275,7 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         await msg.reply_text(START_TEXT, parse_mode="Markdown", reply_markup=kb)
     except Exception as e:
-        # Eski istemcilerde fallback: aynı URL'yi normal link olarak gönder
+        # Eski istemci fallback: aynı URL'yi normal link olarak gönder
         print("start reply error (web_app), fallback to URL:", e, file=sys.stderr)
         kb_fallback = InlineKeyboardMarkup([
             [InlineKeyboardButton("▶️ PLAY", url=PUBLIC_GAME_URL)]
@@ -284,19 +284,22 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def cmd_play(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """
-    Gruplarda kullanıcıyı doğrudan BOT sohbetine yönlendirip oyunu açan PLAY butonu.
+    Gruplarda ve özel sohbette botun ÖZEL sohbetine yönlendiren PLAY butonu.
+    Deep-link game yerine doğrudan bot adresi; böylece 'Gruba/Kanala Ekle' sayfası çıkmaz.
     """
     msg = update.message or update.effective_message
     if not msg:
         return
 
     bot_username = context.bot.username
-    deep_link = f"https://t.me/{bot_username}?game={GAME_SHORT_NAME}"
+    # Botun DM'ine taşı; istersen argüman geçebiliriz: ?start=play
+    bot_dm_link = f"https://t.me/{bot_username}?start=play"
 
+    text = PLAY_PROMPT
     kb = InlineKeyboardMarkup([
-        [InlineKeyboardButton("▶️ PLAY", url=deep_link)]
+        [InlineKeyboardButton("▶️ PLAY", url=bot_dm_link)]
     ])
-    await msg.reply_text(PLAY_PROMPT, parse_mode="Markdown", reply_markup=kb, disable_web_page_preview=True)
+    await msg.reply_text(text, parse_mode="Markdown", reply_markup=kb, disable_web_page_preview=True)
 
 async def cmd_info(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = update.message or update.effective_message
@@ -391,8 +394,9 @@ async def cmd_admin_reset_all(update: Update, context: ContextTypes.DEFAULT_TYPE
         await conn.execute(text("UPDATE scores SET best_score=0, updated_at=now()"))
     await (update.message or update.effective_message).reply_text("ok:true reset_all")
 
+# Handlers
 telegram_app.add_handler(CommandHandler("start",            cmd_start))
-telegram_app.add_handler(CommandHandler("play",             cmd_play))   # 👈 yeni komut
+telegram_app.add_handler(CommandHandler(["play", "Play"],   cmd_play))   # /play ve /Play
 telegram_app.add_handler(CommandHandler("info",             cmd_info))
 telegram_app.add_handler(CommandHandler("top",              cmd_top))
 telegram_app.add_handler(CommandHandler("whoami",           cmd_whoami))
