@@ -4,7 +4,6 @@ import sys
 import json
 import hmac
 import hashlib
-import time
 from typing import Any, Dict, Optional
 from urllib.parse import parse_qs, parse_qsl, unquote_plus
 
@@ -22,7 +21,6 @@ from telegram import (
     WebAppInfo,
     InlineKeyboardButton,
     InlineKeyboardMarkup,
-    CallbackGame,          # 👈 eklendi
 )
 from telegram.ext import Application, CommandHandler, ContextTypes
 
@@ -31,8 +29,8 @@ from telegram.ext import Application, CommandHandler, ContextTypes
 # =========================
 TELEGRAM_BOT_TOKEN = os.environ["TELEGRAM_BOT_TOKEN"]
 DATABASE_URL = (os.environ.get("DATABASE_URL") or "").strip()
-SECRET = (os.environ.get("SECRET") or "").strip()
-PUBLIC_GAME_URL = (os.environ.get("PUBLIC_GAME_URL") or "/").strip()   # menü butonu için
+SECRET = (os.environ.get("SECRET") or "").strip()  # optional legacy HMAC
+PUBLIC_GAME_URL = (os.environ.get("PUBLIC_GAME_URL") or "/").strip()
 GAME_SHORT_NAME = (os.environ.get("GAME_SHORT_NAME") or "kapi_run").strip()
 
 WEBHOOK_PATH = (os.environ.get("WEBHOOK_PATH") or "/tg/webhook").strip()
@@ -80,6 +78,7 @@ async def list_routes():
     return [{"path": r.path, "methods": list(getattr(r, "methods", []))} for r in app.routes]
 
 def _first_existing(filename: str, fallback: bool = True):
+    import os
     p1 = os.path.join(os.getcwd(), filename)
     if os.path.isfile(p1):
         return p1
@@ -200,13 +199,18 @@ def _is_owner(update: Update) -> bool:
     u = update.effective_user
     return bool(u and u.id == ADMIN_OWNER_ID)
 
-# ---------- User-visible texts ----------
+# ---------- Texts ----------
 START_TEXT = (
     "🧣 *Welcome, OKAPI!*\n\n"
     "Kapi is ready to run. Are you ready to guide it?\n"
-    "Tap the *PLAY* button below to start your adventure.\n"
+    "Tap the *KAPI RUN and PLAY* button below to start your adventure.\n"
     "Type /top to see the leaderboard.\n"
     "Use /info for tips and secrets."
+)
+
+PLAY_PROMPT = (
+    "🧣 *OKAPI*\n\n"
+    "To begin your adventure, tap the *PLAY* button below."
 )
 
 INFO_TEXT = (
@@ -250,7 +254,7 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat = update.effective_chat
     is_group = bool(chat and chat.type in ("group", "supergroup"))
 
-    # Özel sohbette alt menüye miniapp butonu (kullanıcı talebiyle korunuyor)
+    # Özel sohbette alt menüde KAPI RUN mini-app butonu
     if not is_group:
         try:
             await context.bot.set_chat_menu_button(
@@ -263,24 +267,36 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except Exception as e:
             print("set_chat_menu_button error:", e, file=sys.stderr)
 
-    # 👇 OYUNU HER YERDE TELEGRAM İÇİNDE AÇ: send_game + callback_game
+    # /start için tek buton: PLAY (WebApp = miniapp ile aynı URL)
+    kb = InlineKeyboardMarkup([
+        [InlineKeyboardButton("▶️ PLAY", web_app=WebAppInfo(url=PUBLIC_GAME_URL))]
+    ])
+
     try:
-        await context.bot.send_game(
-            chat_id=chat.id,
-            game_short_name=GAME_SHORT_NAME,
-            reply_markup=InlineKeyboardMarkup([
-                [InlineKeyboardButton("▶️ PLAY", callback_game=CallbackGame())]
-            ]),
-        )
-        # Bilgilendirici metni ayrıca gönder
-        await msg.reply_text(START_TEXT, parse_mode="Markdown", disable_web_page_preview=True)
+        await msg.reply_text(START_TEXT, parse_mode="Markdown", reply_markup=kb)
     except Exception as e:
-        # Çok nadir fallback: deep-link (yine Telegram içinde açar)
-        print("send_game failed, fallback to deep-link:", e, file=sys.stderr)
-        bot_username = context.bot.username
-        deep_link = f"https://t.me/{bot_username}?game={GAME_SHORT_NAME}"
-        kb = InlineKeyboardMarkup([[InlineKeyboardButton("▶️ PLAY", url=deep_link)]])
-        await msg.reply_text(START_TEXT, parse_mode="Markdown", reply_markup=kb, disable_web_page_preview=True)
+        # Eski istemcilerde fallback: aynı URL'yi normal link olarak gönder
+        print("start reply error (web_app), fallback to URL:", e, file=sys.stderr)
+        kb_fallback = InlineKeyboardMarkup([
+            [InlineKeyboardButton("▶️ PLAY", url=PUBLIC_GAME_URL)]
+        ])
+        await msg.reply_text(START_TEXT, parse_mode="Markdown", reply_markup=kb_fallback, disable_web_page_preview=True)
+
+async def cmd_play(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """
+    Gruplarda kullanıcıyı doğrudan BOT sohbetine yönlendirip oyunu açan PLAY butonu.
+    """
+    msg = update.message or update.effective_message
+    if not msg:
+        return
+
+    bot_username = context.bot.username
+    deep_link = f"https://t.me/{bot_username}?game={GAME_SHORT_NAME}"
+
+    kb = InlineKeyboardMarkup([
+        [InlineKeyboardButton("▶️ PLAY", url=deep_link)]
+    ])
+    await msg.reply_text(PLAY_PROMPT, parse_mode="Markdown", reply_markup=kb, disable_web_page_preview=True)
 
 async def cmd_info(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = update.message or update.effective_message
@@ -376,6 +392,7 @@ async def cmd_admin_reset_all(update: Update, context: ContextTypes.DEFAULT_TYPE
     await (update.message or update.effective_message).reply_text("ok:true reset_all")
 
 telegram_app.add_handler(CommandHandler("start",            cmd_start))
+telegram_app.add_handler(CommandHandler("play",             cmd_play))   # 👈 yeni komut
 telegram_app.add_handler(CommandHandler("info",             cmd_info))
 telegram_app.add_handler(CommandHandler("top",              cmd_top))
 telegram_app.add_handler(CommandHandler("whoami",           cmd_whoami))
@@ -431,6 +448,7 @@ async def post_score(
             body = {}
     except Exception:
         body = {}
+
     try:
         score_val = int(body.get("score", 0))
     except Exception:
