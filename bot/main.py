@@ -29,7 +29,7 @@ from telegram.ext import Application, CommandHandler, ContextTypes
 # =========================
 TELEGRAM_BOT_TOKEN = os.environ["TELEGRAM_BOT_TOKEN"]
 DATABASE_URL = (os.environ.get("DATABASE_URL") or "").strip()
-SECRET = (os.environ.get("SECRET") or "").strip()
+SECRET = (os.environ.get("SECRET") or "").strip()  # optional legacy HMAC
 PUBLIC_GAME_URL = (os.environ.get("PUBLIC_GAME_URL") or "/").strip()
 GAME_SHORT_NAME = (os.environ.get("GAME_SHORT_NAME") or "kapi_run").strip()
 
@@ -209,8 +209,8 @@ START_TEXT = (
 )
 
 PLAY_PROMPT = (
-    "🧣 *OKAPI*\n\n"
-    "To begin your adventure, tap the *PLAY* button below."
+    "🧣 OKAPI 🧣\n\n"
+    "To begin your adventure, tap the PLAY button below."
 )
 
 INFO_TEXT = (
@@ -247,27 +247,25 @@ INFO_TEXT = (
 
 # ---------- Commands ----------
 async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    msg = update.message or update.effective_message
-    if not msg:
+    chat = update.effective_chat
+    # sadece özel sohbetlerde cevap ver
+    if not chat or chat.type in ("group", "supergroup"):
         return
 
-    chat = update.effective_chat
-    is_group = bool(chat and chat.type in ("group", "supergroup"))
+    msg = update.message or update.effective_message
 
-    # Özel sohbette alt menüde KAPI RUN mini-app butonu (WebApp)
-    if not is_group:
-        try:
-            await context.bot.set_chat_menu_button(
-                chat_id=chat.id,
-                menu_button=MenuButtonWebApp(
-                    text="KAPI RUN",
-                    web_app=WebAppInfo(url=PUBLIC_GAME_URL)
-                )
+    # alt menüde KAPI RUN mini-app butonu
+    try:
+        await context.bot.set_chat_menu_button(
+            chat_id=chat.id,
+            menu_button=MenuButtonWebApp(
+                text="KAPI RUN",
+                web_app=WebAppInfo(url=PUBLIC_GAME_URL)
             )
-        except Exception as e:
-            print("set_chat_menu_button error:", e, file=sys.stderr)
+        )
+    except Exception as e:
+        print("set_chat_menu_button error:", e, file=sys.stderr)
 
-    # /start: tek buton PLAY — WebApp URL (mini-app ile aynı)
     kb = InlineKeyboardMarkup([
         [InlineKeyboardButton("▶️ PLAY", web_app=WebAppInfo(url=PUBLIC_GAME_URL))]
     ])
@@ -280,31 +278,43 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         kb_fallback = InlineKeyboardMarkup([
             [InlineKeyboardButton("▶️ PLAY", url=PUBLIC_GAME_URL)]
         ])
-        await msg.reply_text(START_TEXT, parse_mode="Markdown", reply_markup=kb_fallback, disable_web_page_preview=True)
+        await msg.reply_text(
+            START_TEXT,
+            parse_mode="Markdown",
+            reply_markup=kb_fallback,
+            disable_web_page_preview=True
+        )
+
+async def cmd_info(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    chat = update.effective_chat
+    # sadece özel sohbetlerde cevap ver
+    if not chat or chat.type in ("group", "supergroup"):
+        return
+
+    msg = update.message or update.effective_message
+    if msg:
+        await msg.reply_text(INFO_TEXT, parse_mode="Markdown")
 
 async def cmd_play(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """
-    Gruplarda ve özel sohbette botun ÖZEL sohbetine yönlendiren PLAY butonu.
-    Deep-link game yerine doğrudan bot adresi; böylece 'Gruba/Kanala Ekle' sayfası çıkmaz.
+    Gruplarda ve özel sohbette, kullanıcıyı botun DM'ine götüren PLAY butonu.
     """
     msg = update.message or update.effective_message
     if not msg:
         return
 
     bot_username = context.bot.username
-    # Botun DM'ine taşı; istersen argüman geçebiliriz: ?start=play
     bot_dm_link = f"https://t.me/{bot_username}?start=play"
 
-    text = PLAY_PROMPT
     kb = InlineKeyboardMarkup([
         [InlineKeyboardButton("▶️ PLAY", url=bot_dm_link)]
     ])
-    await msg.reply_text(text, parse_mode="Markdown", reply_markup=kb, disable_web_page_preview=True)
-
-async def cmd_info(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    msg = update.message or update.effective_message
-    if msg:
-        await msg.reply_text(INFO_TEXT, parse_mode="Markdown")
+    await msg.reply_text(
+        PLAY_PROMPT,
+        parse_mode="Markdown",
+        reply_markup=kb,
+        disable_web_page_preview=True
+    )
 
 async def cmd_top(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = update.message or update.effective_message
